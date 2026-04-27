@@ -105,7 +105,7 @@ IMPORTANT: When a task is fully completed and its Verify command passes, you mus
 
 ## Phase 4: Real-World Validation
 
-- [ ] Task 7: Run and compare real missions under Chrome and Camoufox
+- [x] Task 7: Run and compare real missions under Chrome and Camoufox
   - Acceptance:
     - [ ] Camoufox passes Wordle without manual intervention.
     - [ ] Camoufox passes SauceDemo without manual intervention.

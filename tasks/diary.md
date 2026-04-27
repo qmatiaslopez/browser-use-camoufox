@@ -10,3 +10,5 @@
 - Added stale target relocalization coverage; full validators and package build pass (`ruff check`, `ruff format --check`, `pyright`, `pytest`, `uv build`).
 - Completed Task 5: successful element clicks now record bounded post-click diagnostics for URL/title changes, DOM count deltas, visible text excerpts, and safe target attribute changes without changing the existing successful click return value.
 - Added click diagnostic regression coverage with sensitive attribute omission; focused Task 5 validators, pyright, and package build pass.
+- Completed Task 6: indexed scroll events now target the nearest scrollable ancestor and fall back to page scrolling when no meaningful container is available, preserving unindexed page scroll behavior.
+- Added nested scroll regression coverage; focused Task 6 validators, full pytest, ruff, pyright, and package build pass.

@@ -100,13 +100,13 @@ IMPORTANT: When a task is fully completed and its verification commands pass, up
 
 ## Phase 3: Scroll and Viewport Targeting
 
-- [ ] Task 6: Target nearest meaningful scroll container
+- [x] Task 6: Target nearest meaningful scroll container
   - Acceptance:
-    - [ ] Page-level scroll behavior remains unchanged when no index is supplied.
-    - [ ] Indexed scroll finds a nearby scrollable container and applies bounded movement there.
-    - [ ] Nested scroll fixture verifies the intended container moves while unrelated containers do not.
+    - [x] Page-level scroll behavior remains unchanged when no index is supplied.
+    - [x] Indexed scroll finds a nearby scrollable container and applies bounded movement there.
+    - [x] Nested scroll fixture verifies the intended container moves while unrelated containers do not.
   - Verify:
-    - [ ] `uv run pytest -q tests/integration/test_basic_actions.py tests/integration/test_interaction_events.py`
+    - [x] `uv run pytest -q tests/integration/test_basic_actions.py tests/integration/test_interaction_events.py`
   - Dependencies: Task 2
   - Files:
     - `src/browser_use_camoufox/session.py`

@@ -483,7 +483,9 @@ class CamoufoxSession(BrowserSession):
 	async def on_ScrollEvent(self, event: ScrollEvent) -> None:
 		page = await self._ensure_page()
 		if event.node is not None:
-			await self._locator_for_node(event.node).scroll_into_view_if_needed()
+			x_delta = event.amount if event.direction == 'right' else -event.amount if event.direction == 'left' else 0
+			y_delta = event.amount if event.direction == 'down' else -event.amount if event.direction == 'up' else 0
+			await self._scroll_nearest_container(event.node, x_delta, y_delta)
 			return
 		x_delta = event.amount if event.direction == 'right' else -event.amount if event.direction == 'left' else 0
 		y_delta = event.amount if event.direction == 'down' else -event.amount if event.direction == 'up' else 0
@@ -1048,6 +1050,41 @@ class CamoufoxSession(BrowserSession):
 			return False
 		target = str(target_id)
 		return target in {str(index), f'{index:04d}', self._tab_target_id(index)}
+
+	async def _scroll_nearest_container(self, node: EnhancedDOMTreeNode, x_delta: int, y_delta: int) -> None:
+		locator = self._locator_for_node(node)
+		await locator.evaluate(
+			"""(element, delta) => {
+				const canScroll = (candidate) => {
+					if (!candidate) return false;
+					const style = window.getComputedStyle(candidate);
+					const overflowY = style.overflowY;
+					const overflowX = style.overflowX;
+					return (
+					(
+						delta.y !== 0
+						&& /(auto|scroll|overlay)/.test(overflowY)
+						&& candidate.scrollHeight > candidate.clientHeight
+					)
+					|| (
+						delta.x !== 0
+						&& /(auto|scroll|overlay)/.test(overflowX)
+						&& candidate.scrollWidth > candidate.clientWidth
+					)
+					);
+				};
+				let container = element.parentElement;
+				while (container && container !== document.body && !canScroll(container)) {
+					container = container.parentElement;
+				}
+				if (container && canScroll(container)) {
+					container.scrollBy({left: delta.x, top: delta.y});
+					return;
+				}
+				window.scrollBy(delta.x, delta.y);
+			}""",
+			{'x': x_delta, 'y': y_delta},
+		)
 
 	async def _ensure_page(self, *, new_tab: bool = False) -> Page:
 		if self._context is None:

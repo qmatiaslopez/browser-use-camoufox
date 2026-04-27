@@ -83,7 +83,6 @@ async def test_direct_click_relocalizes_stale_target_once(tmp_path: Path):
 
 
 @pytest.mark.anyio
-@pytest.mark.xfail(reason='RED fixture for the future ranked relocalization task.', strict=True)
 async def test_direct_click_keeps_stale_target_identity_across_repeated_results(tmp_path: Path):
 	fixture = tmp_path / 'repeated_results.html'
 	fixture.write_text(
@@ -148,7 +147,6 @@ async def test_direct_click_keeps_stale_target_identity_across_repeated_results(
 
 
 @pytest.mark.anyio
-@pytest.mark.xfail(reason='RED fixture for the future relocalization diagnostics task.', strict=True)
 async def test_direct_click_reports_ambiguous_stale_repeated_results(tmp_path: Path):
 	fixture = tmp_path / 'ambiguous_repeated_results.html'
 	fixture.write_text(

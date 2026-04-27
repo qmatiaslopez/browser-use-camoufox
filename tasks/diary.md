@@ -24,3 +24,12 @@
   - `uv run pyright`
   - `uv run pytest -q`
   - `uv build`
+- Completed Task 3: stale action relocalization now ranks actionable candidates by safe semantic attributes instead of requiring exact selector/text signatures.
+- Repeated-result stale clicks now preserve the intended target when one candidate clearly matches, while ambiguous ties remain blocked with bounded score diagnostics.
+- Task 3 validators pass:
+  - `uv run pytest -q tests/parity/test_stale_indexes.py tests/integration/test_dom_selector_reliability.py`
+  - `uv run ruff check src tests scripts`
+  - `uv run ruff format --check src tests scripts`
+  - `uv run pyright`
+  - `uv run pytest -q`
+  - `uv build`

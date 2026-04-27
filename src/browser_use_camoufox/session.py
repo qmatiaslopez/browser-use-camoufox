@@ -1434,28 +1434,80 @@ class CamoufoxSession(BrowserSession):
 
 	async def _relocalize_action_node(self, node: EnhancedDOMTreeNode) -> EnhancedDOMTreeNode:
 		await self._get_dom_state()
-		signature = self._action_node_signature(node)
-		if signature is None:
-			return self._cached_selector_map.get(node.node_id, node)
-		matches = [
-			candidate
+		candidate_scores = [
+			(candidate, self._action_node_match_score(node, candidate))
 			for candidate in self._cached_selector_map.values()
-			if self._action_node_signature(candidate) == signature
+			if self._is_actionable_candidate(candidate)
 		]
-		if not matches:
+		scored_matches = [(candidate, score) for candidate, score in candidate_scores if score > 0]
+		if not scored_matches:
+			fallback = self._cached_selector_map.get(node.node_id)
+			if fallback is not None and self._is_actionable_candidate(fallback):
+				return fallback
 			raise RuntimeError(f'Element {node.node_id} relocalization unavailable after DOM refresh.')
-		actionable_matches = [
-			candidate
-			for candidate in matches
-			if candidate.attributes.get('data-browser-use-camoufox-disabled') != 'true'
-			and candidate.attributes.get(OBSERVABLE_ELEMENT_ATTRIBUTE) != 'true'
-		]
-		if len(actionable_matches) != 1:
-			raise RuntimeError(
-				f'Element {node.node_id} relocalization ambiguous or blocked by safety checks: '
-				f'{len(matches)} candidate(s), {len(actionable_matches)} actionable.'
-			)
-		return actionable_matches[0]
+		scored_matches.sort(key=lambda item: (-item[1], item[0].node_id))
+		best_score = scored_matches[0][1]
+		best_matches = [candidate for candidate, score in scored_matches if score == best_score]
+		if len(best_matches) == 1:
+			return best_matches[0]
+		top_scores = ', '.join(
+			f'node={candidate.node_id} score={score} evidence={self._safe_node_evidence(candidate)}'
+			for candidate, score in scored_matches[:3]
+		)
+		raise RuntimeError(
+			f'Ambiguous stale element relocalization for node {node.node_id}: '
+			f'{len(scored_matches)} actionable candidate(s), top scores: {top_scores}'
+		)
+
+	def _is_actionable_candidate(self, node: EnhancedDOMTreeNode) -> bool:
+		return (
+			node.attributes.get('data-browser-use-camoufox-disabled') != 'true'
+			and node.attributes.get(OBSERVABLE_ELEMENT_ATTRIBUTE) != 'true'
+		)
+
+	def _action_node_match_score(self, original: EnhancedDOMTreeNode, candidate: EnhancedDOMTreeNode) -> int:
+		score = 0
+		if original.tag_name.upper() != candidate.tag_name.upper():
+			return 0
+		if original.attributes.get('data-browser-use-camoufox-frame', 'main') != candidate.attributes.get(
+			'data-browser-use-camoufox-frame', 'main'
+		):
+			return 0
+		if original.attributes.get('data-browser-use-camoufox-frame-url', '') != candidate.attributes.get(
+			'data-browser-use-camoufox-frame-url', ''
+		):
+			return 0
+		if original.node_value.strip() and original.node_value.strip() == candidate.node_value.strip():
+			score += 10
+		if original.attributes.get(SEMANTIC_EVIDENCE_ATTRIBUTE) and original.attributes.get(
+			SEMANTIC_EVIDENCE_ATTRIBUTE
+		) == candidate.attributes.get(SEMANTIC_EVIDENCE_ATTRIBUTE):
+			score += 8
+		for name, weight in (
+			('href', 20),
+			('id', 18),
+			('name', 14),
+			('type', 8),
+			('role', 8),
+			('aria-label', 12),
+			('title', 10),
+			('placeholder', 10),
+			('data-testid', 16),
+			('data-test', 16),
+			('data-value', 14),
+			('data-state', 8),
+		):
+			value = original.attributes.get(name)
+			if value and value == candidate.attributes.get(name):
+				score += weight
+		selector = original.attributes.get('data-browser-use-camoufox-selector')
+		if selector and selector == candidate.attributes.get('data-browser-use-camoufox-selector'):
+			score += 4
+		return score
+
+	def _safe_node_evidence(self, node: EnhancedDOMTreeNode) -> str:
+		evidence = node.attributes.get(SEMANTIC_EVIDENCE_ATTRIBUTE) or node.node_value.strip()
+		return re.sub(r'\s+', ' ', evidence).strip()[:MAX_SEMANTIC_EVIDENCE_LENGTH]
 
 	def _action_node_signature(self, node: EnhancedDOMTreeNode) -> tuple[str, str, str, str, str] | None:
 		selector = node.attributes.get('data-browser-use-camoufox-selector')
@@ -1465,6 +1517,16 @@ class CamoufoxSession(BrowserSession):
 		if not selector or not text:
 			return None
 		return (node.tag_name.upper(), selector, frame, frame_url, text)
+
+	def _exact_action_node_matches(self, node: EnhancedDOMTreeNode) -> list[EnhancedDOMTreeNode]:
+		signature = self._action_node_signature(node)
+		if signature is None:
+			return []
+		return [
+			candidate
+			for candidate in self._cached_selector_map.values()
+			if self._action_node_signature(candidate) == signature
+		]
 
 	def _missing_index_result(self, index: int) -> ActionResult:
 		url = self._page.url if self._page is not None else 'about:blank'

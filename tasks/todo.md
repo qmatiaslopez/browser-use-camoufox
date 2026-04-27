@@ -39,14 +39,14 @@ IMPORTANT: When a task is fully completed and its verification commands pass, up
 
 ## Phase 2: Ranked Relocalization
 
-- [ ] Task 3: Replace exact-signature relocalization with scored candidate ranking
+- [x] Task 3: Replace exact-signature relocalization with scored candidate ranking
   - Acceptance:
-    - [ ] Repeated candidates can be resolved when one candidate clearly matches the original semantic evidence.
-    - [ ] Ambiguous candidates remain blocked with score diagnostics.
-    - [ ] Disabled and observable-only candidates are never selected.
+    - [x] Repeated candidates can be resolved when one candidate clearly matches the original semantic evidence.
+    - [x] Ambiguous candidates remain blocked with score diagnostics.
+    - [x] Disabled and observable-only candidates are never selected.
   - Verify:
-    - [ ] `uv run pytest -q tests/parity/test_stale_indexes.py`
-    - [ ] `uv run pytest -q tests/integration/test_dom_selector_reliability.py`
+    - [x] `uv run pytest -q tests/parity/test_stale_indexes.py`
+    - [x] `uv run pytest -q tests/integration/test_dom_selector_reliability.py`
   - Dependencies: Task 2
   - Files:
     - `src/browser_use_camoufox/session.py`

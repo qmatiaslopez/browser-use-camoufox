@@ -1,0 +1,83 @@
+[project]
+name = "browser-use-camoufox"
+version = "0.1.0"
+description = "Camoufox compatibility layer for browser-use."
+readme = "README.md"
+requires-python = ">=3.11,<3.13"
+license = "MIT"
+authors = [
+	{ name = "browser-use-camoufox maintainers" },
+]
+keywords = ["browser-use", "camoufox", "playwright", "browser-automation"]
+classifiers = [
+	"Development Status :: 3 - Alpha",
+	"Intended Audience :: Developers",
+	"License :: OSI Approved :: MIT License",
+	"Programming Language :: Python :: 3",
+	"Programming Language :: Python :: 3.11",
+	"Programming Language :: Python :: 3.12",
+	"Topic :: Software Development :: Libraries :: Python Modules",
+]
+dependencies = [
+	"browser-use==0.12.6",
+	"cloverlabs-camoufox",
+]
+
+[dependency-groups]
+dev = [
+	"pyright>=1.1.407",
+	"pytest>=9.0.0",
+	"ruff>=0.14.0",
+]
+
+[project.urls]
+Issues = "https://github.com/qmatiaslopez/browser-use-camoufox/issues"
+Source = "https://github.com/qmatiaslopez/browser-use-camoufox"
+
+[project.scripts]
+browser-use-camoufox = "browser_use_camoufox.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/browser_use_camoufox"]
+
+[tool.hatch.build.targets.sdist]
+exclude = [
+	"/.pytest_cache",
+	"/.ruff_cache",
+	"/.venv",
+	"/artifacts",
+	"/build",
+	"/dist",
+	"/downloads",
+	"/storage_state.json",
+	"/storage_state*.json",
+	"**/__pycache__",
+	"**/*.camoufox.json",
+	"**/*.py[cod]",
+	"/*.har",
+	"/*.webm",
+	"/*.mp4",
+	"/*.png",
+	"/*.jpg",
+	"/*.jpeg",
+]
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+
+[tool.ruff.format]
+quote-style = "single"
+indent-style = "tab"
+line-ending = "lf"
+
+[tool.pyright]
+include = ["src"]
+exclude = ["tests", ".venv", "dist"]
+reportIncompatibleMethodOverride = "none"

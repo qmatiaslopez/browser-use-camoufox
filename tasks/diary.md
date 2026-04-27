@@ -42,3 +42,13 @@
   - `uv run pyright`
   - `uv run pytest -q`
   - `uv build`
+
+- Completed Task 5: safe click handling now records fallback diagnostics and uses bounded keyboard activation recovery when a left-click path produces no page-level change or a click error is recoverable.
+- The fallback remains blocked for disabled, observable-only, ambiguous, and unrecoverable targets, and no public-site selectors or CDP paths were added.
+- Task 5 validators pass:
+  - `uv run pytest -q tests/integration/test_interaction_events.py tests/parity/test_stale_indexes.py`
+  - `uv run ruff check src tests scripts`
+  - `uv run ruff format --check src tests scripts`
+  - `uv run pyright`
+  - `uv run pytest -q`
+  - `uv build`

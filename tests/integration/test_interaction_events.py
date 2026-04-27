@@ -144,7 +144,6 @@ async def test_click_records_bounded_post_click_change_diagnostics(tmp_path: Pat
 
 
 @pytest.mark.anyio
-@pytest.mark.xfail(reason='RED fixture for the future safe click/form submit fallback task.', strict=True)
 async def test_click_recovers_when_primary_click_times_out_but_keyboard_activation_submits(tmp_path: Path):
 	fixture = tmp_path / 'generic_search_timeout.html'
 	fixture.write_text(
@@ -189,5 +188,9 @@ async def test_click_recovers_when_primary_click_times_out_but_keyboard_activati
 
 		page = await session.get_current_page()
 		assert await page.locator('#result').text_content() == 'Submitted runtime diagnostics'
+		diagnostics = session.last_click_diagnostics
+		assert diagnostics is not None
+		assert diagnostics['fallback']['attempted'] == ['click', 'keyboard_activation']
+		assert diagnostics['fallback']['result'] == 'keyboard_activation_succeeded'
 	finally:
 		await session.stop()

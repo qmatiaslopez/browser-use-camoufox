@@ -74,13 +74,13 @@ IMPORTANT: When a task is fully completed and its verification commands pass, up
 
 ## Phase 3: Safe Click and Submit Recovery
 
-- [ ] Task 5: Implement safe click fallback pipeline
+- [x] Task 5: Implement safe click fallback pipeline
   - Acceptance:
-    - [ ] Timeout-covered generic fixture succeeds when one safe target is clear.
-    - [ ] Fallback refuses disabled/observable-only/ambiguous targets.
-    - [ ] Fallback diagnostics record attempted path and final result.
+    - [x] Timeout-covered generic fixture succeeds when one safe target is clear.
+    - [x] Fallback refuses disabled/observable-only/ambiguous targets.
+    - [x] Fallback diagnostics record attempted path and final result.
   - Verify:
-    - [ ] `uv run pytest -q tests/integration/test_interaction_events.py tests/parity/test_stale_indexes.py`
+    - [x] `uv run pytest -q tests/integration/test_interaction_events.py tests/parity/test_stale_indexes.py`
   - Dependencies: Task 4
   - Files:
     - `src/browser_use_camoufox/session.py`

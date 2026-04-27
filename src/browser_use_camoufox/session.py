@@ -454,12 +454,49 @@ class CamoufoxSession(BrowserSession):
 			)
 		node = await self._relocalize_action_node(event.node)
 		before = await self._capture_click_state(node)
+		fallback_attempted = ['click']
+		click_failed = False
 		try:
-			await self._locator_for_node(node).click(button=event.button, timeout=CLICK_TIMEOUT_MS)
+			locator = self._locator_for_node(node)
+			await locator.click(button=event.button, timeout=CLICK_TIMEOUT_MS)
 		except Error as exc:
-			raise RuntimeError(self._click_error_message(node, exc)) from exc
+			click_failed = True
+			fallback_attempted.append('keyboard_activation')
+			try:
+				await self._keyboard_activate_node(node)
+			except Error:
+				raise RuntimeError(self._click_error_message(node, exc, fallback_attempted, 'failed')) from exc
 		after = await self._capture_click_state(node)
-		object.__setattr__(self, '_last_click_diagnostics', self._click_change_diagnostics(before, after))
+		diagnostics = self._click_change_diagnostics(before, after)
+		if (
+			fallback_attempted == ['click']
+			and event.button == 'left'
+			and not self._click_page_changed(diagnostics)
+			and self._can_keyboard_activate(node)
+		):
+			fallback_attempted.append('keyboard_activation')
+			await self._keyboard_activate_node(node)
+			after = await self._capture_click_state(node)
+			diagnostics = self._click_change_diagnostics(before, after)
+		diagnostics['fallback'] = {
+			'attempted': fallback_attempted,
+			'result': 'keyboard_activation_succeeded'
+			if fallback_attempted[-1] == 'keyboard_activation' and self._click_state_changed(diagnostics)
+			else 'click_succeeded'
+			if self._click_state_changed(diagnostics)
+			else 'no_change_detected',
+		}
+		object.__setattr__(self, '_last_click_diagnostics', diagnostics)
+		if (
+			click_failed
+			and fallback_attempted[-1] == 'keyboard_activation'
+			and not self._click_state_changed(diagnostics)
+		):
+			raise RuntimeError(
+				'Camoufox click failed after '
+				f'{CLICK_TIMEOUT_MS}ms; node={node.node_id}; fallback_attempted={fallback_attempted}; '
+				'fallback_result=no_change_detected'
+			)
 		return None
 
 	async def on_ClickCoordinateEvent(self, event: ClickCoordinateEvent) -> dict[str, int]:
@@ -1557,7 +1594,13 @@ class CamoufoxSession(BrowserSession):
 			return frame.locator(str(selector)).nth(int(ordinal))
 		return page.locator(str(selector)).nth(int(ordinal))
 
-	def _click_error_message(self, node: EnhancedDOMTreeNode, exc: Error) -> str:
+	def _click_error_message(
+		self,
+		node: EnhancedDOMTreeNode,
+		exc: Error,
+		fallback_attempted: list[str] | None = None,
+		fallback_result: str | None = None,
+	) -> str:
 		selector = node.attributes.get('data-browser-use-camoufox-selector', '<unknown>')
 		ordinal = node.attributes.get('data-browser-use-camoufox-ordinal', '<unknown>')
 		text = (node.node_value or node.attributes.get('aria-label') or node.attributes.get('title') or '').strip()
@@ -1573,8 +1616,29 @@ class CamoufoxSession(BrowserSession):
 			details.append(f'data-state={state}')
 		if text:
 			details.append(f'text={text[:120]}')
+		if fallback_attempted:
+			details.append(f'fallback_attempted={fallback_attempted}')
+		if fallback_result:
+			details.append(f'fallback_result={fallback_result}')
 		details.append(f'playwright_error={str(exc).splitlines()[0]}')
 		return '; '.join(details)
+
+	def _can_keyboard_activate(self, node: EnhancedDOMTreeNode) -> bool:
+		if node.attributes.get('data-browser-use-camoufox-disabled') == 'true':
+			return False
+		if node.attributes.get(OBSERVABLE_ELEMENT_ATTRIBUTE) == 'true':
+			return False
+		tag_name = node.tag_name.upper()
+		role = (node.attributes.get('role') or '').lower()
+		return tag_name in {'BUTTON', 'A', 'INPUT'} or role in {'button', 'link', 'menuitem', 'option', 'tab'}
+
+	async def _keyboard_activate_node(self, node: EnhancedDOMTreeNode) -> None:
+		locator = self._locator_for_node(node)
+		await locator.focus(timeout=CLICK_TIMEOUT_MS)
+		key = 'Enter'
+		if node.tag_name.upper() == 'BUTTON' or (node.attributes.get('role') or '').lower() == 'button':
+			key = 'Space'
+		await locator.press(key, timeout=CLICK_TIMEOUT_MS)
 
 	async def _capture_click_state(self, node: EnhancedDOMTreeNode) -> dict[str, Any]:
 		page = await self._ensure_page()
@@ -1635,6 +1699,18 @@ class CamoufoxSession(BrowserSession):
 				'changed': before_attrs != after_attrs,
 			},
 		}
+
+	def _click_state_changed(self, diagnostics: dict[str, Any]) -> bool:
+		target_attributes = cast(dict[str, Any], diagnostics.get('target_attributes') or {})
+		return bool(self._click_page_changed(diagnostics) or target_attributes.get('changed'))
+
+	def _click_page_changed(self, diagnostics: dict[str, Any]) -> bool:
+		return bool(
+			diagnostics.get('url_changed')
+			or cast(dict[str, Any], diagnostics.get('title') or {}).get('changed')
+			or cast(dict[str, Any], diagnostics.get('dom_count') or {}).get('changed')
+			or cast(dict[str, Any], diagnostics.get('visible_text_change') or {}).get('changed')
+		)
 
 	def _safe_attribute_snapshot(self, attributes: Any) -> dict[str, str]:
 		if not isinstance(attributes, dict):

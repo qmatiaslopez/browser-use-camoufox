@@ -79,3 +79,13 @@
   - `uv run pyright`
   - `uv run pytest -q`
   - `uv build`
+- Completed Task 9: benchmark matrix summaries now include mission count, failed runs, failure-class counts, owner-category counts, and diagnostic run counts for runtime/tool errors, fallback paths, and candidate rankings.
+- Added regression coverage for all 15 missions, owner classification, matrix deltas, and report redaction.
+- Task 9 validators pass:
+  - `uv run pytest -q tests/parity/test_chrome_camoufox_dom_parity.py`
+  - `uv run python scripts/real_world_kit.py --list-missions`
+  - `uv run ruff check src tests scripts`
+  - `uv run ruff format --check src tests scripts`
+  - `uv run pyright`
+  - `uv run pytest -q`
+  - `uv build`

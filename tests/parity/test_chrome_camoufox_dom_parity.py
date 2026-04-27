@@ -419,3 +419,52 @@ def test_benchmark_matrix_report_preserves_runtime_candidate_diagnostics():
 	assert runtime['fallback_paths'] == [{'action': 'click', 'path': ['locator'], 'result': 'ambiguous'}]
 	assert runtime['candidate_rankings'] == [{'node': 1, 'score': 20, 'semantic_evidence': 'Open'}]
 	assert 'super-secret-token' not in report['json']
+
+
+def test_benchmark_matrix_report_summarizes_owner_categories_and_all_missions():
+	reports = []
+	for mission in real_world_kit.MISSIONS.values():
+		reports.append(
+			{
+				'mission': {
+					'id': mission.id,
+					'family': mission.family,
+					'variation': mission.variation,
+					'complexity': mission.complexity,
+				},
+				'runtime': 'camoufox',
+				'passed': mission.id != 'mdn_fetch_lookup',
+				'failure_class': 'unknown' if mission.id != 'mdn_fetch_lookup' else 'verifier weakness',
+				'history': {'is_successful': True, 'steps': 2},
+				'verification': {'passed': mission.id != 'mdn_fetch_lookup', 'errors': ['verifier token=secret']},
+				'diagnostics': {
+					'duration_seconds': 1.0,
+					'actions': {'count': 2},
+					'fallback_paths': [{'path': ['click'], 'result': 'succeeded'}],
+					'candidate_rankings': [{'node': 7, 'score': 11, 'semantic_evidence': 'Safe label'}],
+				},
+				'errors': [],
+			}
+		)
+
+	report = real_world_kit.build_benchmark_matrix_report(reports)
+
+	assert report['summary']['mission_count'] == 15
+	assert report['summary']['by_failure_class']['verifier weakness'] == 1
+	assert report['summary']['by_owner_category'] == {
+		'model': 0,
+		'runtime': 0,
+		'site': 0,
+		'verifier': 1,
+		'unknown': 14,
+	}
+	assert report['summary']['diagnostics'] == {
+		'runtime_tool_error_runs': 0,
+		'fallback_path_runs': 15,
+		'candidate_ranking_runs': 15,
+	}
+	assert report['missions'][0]['runtimes']['camoufox']['owner_category'] in {
+		'unknown',
+		'verifier',
+	}
+	assert 'secret' not in report['json']

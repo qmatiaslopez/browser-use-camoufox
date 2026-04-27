@@ -629,6 +629,7 @@ def mission_result_summary(mission_report: dict[str, Any]) -> dict[str, Any]:
 		'agent_success': history.get('is_successful'),
 		'verifier_success': verification.get('passed'),
 		'failure_class': mission_report.get('failure_class'),
+		'owner_category': owner_category_for_failure_class(str(mission_report.get('failure_class') or 'unknown')),
 		'duration_seconds': diagnostics.get('duration_seconds'),
 		'steps': history.get('steps'),
 		'action_count': diagnostics.get('actions', {}).get('count'),
@@ -640,6 +641,18 @@ def mission_result_summary(mission_report: dict[str, Any]) -> dict[str, Any]:
 		'fallback_paths': diagnostics.get('fallback_paths', []),
 		'candidate_rankings': diagnostics.get('candidate_rankings', []),
 	}
+
+
+def owner_category_for_failure_class(failure_class: str) -> str:
+	if failure_class == 'model/navigation':
+		return 'model'
+	if failure_class == 'runtime/tooling':
+		return 'runtime'
+	if failure_class in {'page availability', 'challenge/interruption'}:
+		return 'site'
+	if failure_class == 'verifier weakness':
+		return 'verifier'
+	return 'unknown'
 
 
 def build_benchmark_matrix_report(reports: list[dict[str, Any]]) -> dict[str, Any]:
@@ -679,8 +692,23 @@ def build_benchmark_matrix_report(reports: list[dict[str, Any]]) -> dict[str, An
 
 	summary = {
 		'total_runs': len(rows),
+		'mission_count': len(by_mission),
 		'passed_runs': sum(1 for row in rows if row.get('passed')),
+		'failed_runs': sum(1 for row in rows if not row.get('passed')),
 		'by_runtime': {},
+		'by_failure_class': {
+			failure_class: sum(1 for row in rows if row.get('failure_class') == failure_class)
+			for failure_class in FAILURE_CLASSES
+		},
+		'by_owner_category': {
+			owner: sum(1 for row in rows if row.get('owner_category') == owner)
+			for owner in ('model', 'runtime', 'site', 'verifier', 'unknown')
+		},
+		'diagnostics': {
+			'runtime_tool_error_runs': sum(1 for row in rows if row.get('runtime_tool_errors')),
+			'fallback_path_runs': sum(1 for row in rows if row.get('fallback_paths')),
+			'candidate_ranking_runs': sum(1 for row in rows if row.get('candidate_rankings')),
+		},
 	}
 	for runtime in sorted({str(row.get('runtime')) for row in rows}):
 		runtime_rows = [row for row in rows if row.get('runtime') == runtime]

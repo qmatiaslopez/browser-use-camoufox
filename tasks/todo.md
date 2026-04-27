@@ -142,14 +142,14 @@ IMPORTANT: When a task is fully completed and its verification commands pass, up
 
 ## Phase 5: Benchmark Hardening and Final Gate
 
-- [ ] Task 9: Improve benchmark verifier/report classification
+- [x] Task 9: Improve benchmark verifier/report classification
   - Acceptance:
-    - [ ] Matrix report summarizes pass/fail, runtime/tooling errors, candidate diagnostics, fallback paths, and owner category.
-    - [ ] Reports remain redacted and generated only under `artifacts/`.
-    - [ ] Tests cover the 15 mission stack and matrix deltas.
+    - [x] Matrix report summarizes pass/fail, runtime/tooling errors, candidate diagnostics, fallback paths, and owner category.
+    - [x] Reports remain redacted and generated only under `artifacts/`.
+    - [x] Tests cover the 15 mission stack and matrix deltas.
   - Verify:
-    - [ ] `uv run pytest -q tests/parity/test_chrome_camoufox_dom_parity.py`
-    - [ ] `uv run python scripts/real_world_kit.py --list-missions`
+    - [x] `uv run pytest -q tests/parity/test_chrome_camoufox_dom_parity.py`
+    - [x] `uv run python scripts/real_world_kit.py --list-missions`
   - Dependencies: Tasks 4-8
   - Files:
     - `scripts/real_world_kit.py`

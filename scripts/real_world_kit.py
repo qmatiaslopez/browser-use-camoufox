@@ -29,6 +29,15 @@ CHROME_TEST_ARGS = [
 	'--disable-features=PasswordManagerOnboarding,PasswordLeakDetection,AutofillServerCommunication',
 ]
 SENSITIVE_KEY_PARTS = ('api_key', 'apikey', 'authorization', 'cookie', 'password', 'secret', 'token')
+SENSITIVE_TEXT_MARKERS = ('api_key', 'apikey', 'authorization', 'cookie', 'password', 'secret', 'token')
+FAILURE_CLASSES = (
+	'model/navigation',
+	'runtime/tooling',
+	'page availability',
+	'challenge/interruption',
+	'verifier weakness',
+	'unknown',
+)
 
 MISSION_PRINCIPLES = """
 Mandatory mission laws:
@@ -261,12 +270,28 @@ def scrub(value: Any, *, key: Any = None) -> Any:
 		result = value.replace(SAUCE_DEMO_PASSWORD, '<redacted-demo-password>')
 		if api_key:
 			result = result.replace(api_key, '<redacted-api-key>')
+		for marker in SENSITIVE_TEXT_MARKERS:
+			result = redact_marker_value(result, marker)
 		return result
 	if isinstance(value, list):
 		return [scrub(item) for item in value]
 	if isinstance(value, dict):
 		return {item_key: scrub(item, key=item_key) for item_key, item in value.items()}
 	return value
+
+
+def redact_marker_value(text: str, marker: str) -> str:
+	lowered = text.lower()
+	start = lowered.find(marker)
+	if start < 0:
+		return text
+	end = start + len(marker)
+	while end < len(text) and text[end] in ' :=\t':
+		end += 1
+	stop = end
+	while stop < len(text) and not text[stop].isspace() and text[stop] not in ',;&':
+		stop += 1
+	return text[:end] + '<redacted>' + text[stop:]
 
 
 def action_result_summary(action_results: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -306,6 +331,83 @@ def history_summary(history) -> dict[str, Any]:
 		'action_names': history.action_names(),
 		'urls': history.urls(),
 		'steps': history.number_of_steps(),
+	}
+
+
+def body_excerpt(body_text: str, *, limit: int = 1000) -> str:
+	return scrub(body_text[:limit])
+
+
+def url_transitions(urls: list[str]) -> list[dict[str, str]]:
+	return [{'from': before, 'to': after} for before, after in zip(urls, urls[1:], strict=False) if before != after]
+
+
+def classify_failure(report: dict[str, Any]) -> str:
+	if report.get('passed') is True:
+		return 'unknown'
+	text = ' '.join(
+		str(item)
+		for item in [
+			*report.get('errors', []),
+			*report.get('history', {}).get('errors', []),
+			*report.get('verification', {}).get('errors', []),
+		]
+	).lower()
+	if any(marker in text for marker in ('tool', 'runtime', 'detached', 'timeout', 'playwright', 'traceback')):
+		return 'runtime/tooling'
+	if any(marker in text for marker in ('navigate', 'navigation', 'agent did not finish', 'max steps', 'model')):
+		return 'model/navigation'
+	if any(marker in text for marker in ('404', '403', 'unavailable', 'dns', 'net::', 'not found')):
+		return 'page availability'
+	if any(marker in text for marker in ('captcha', 'challenge', 'blocked', 'interstitial', 'modal')):
+		return 'challenge/interruption'
+	if any(marker in text for marker in ('verifier', 'verify', 'success criteria')):
+		return 'verifier weakness'
+	return 'unknown'
+
+
+def enrich_mission_report(
+	report: dict[str, Any], *, final_state: dict[str, Any] | None, duration_seconds: float
+) -> dict[str, Any]:
+	history = report.get('history', {})
+	action_names = history.get('action_names', [])
+	runtime_tool_errors = [error for error in history.get('errors', []) if error]
+	final_state = final_state or {}
+	enriched = {
+		**report,
+		'diagnostics': {
+			'final_state': {
+				'url': final_state.get('url', ''),
+				'title': final_state.get('title', ''),
+				'body_excerpt': body_excerpt(str(final_state.get('body_text', ''))),
+				'metrics': final_state.get('dom_metrics', {}),
+			},
+			'actions': {'names': action_names, 'count': len(action_names)},
+			'duration_seconds': duration_seconds,
+			'url_transitions': url_transitions(history.get('urls', [])),
+			'runtime_tool_errors': runtime_tool_errors,
+			'verifier': report.get('verification', {}),
+		},
+	}
+	enriched['failure_class'] = classify_failure(enriched)
+	return scrub(enriched)
+
+
+async def capture_final_state(session: CamoufoxSession | BrowserSession) -> dict[str, Any]:
+	page = await get_current_page(session)
+	body_text = await evaluate_page(page, "() => document.body ? document.body.innerText : ''")
+	dom_metrics = await evaluate_page(
+		page,
+		"""() => ({
+			element_count: document.querySelectorAll('*').length,
+			body_text_length: document.body ? document.body.innerText.length : 0
+		})""",
+	)
+	return {
+		'url': await page_url(session, page),
+		'title': await page_title(session, page),
+		'body_text': body_text,
+		'dom_metrics': dom_metrics,
 	}
 
 
@@ -360,7 +462,13 @@ async def run_mission(
 		result['errors'].append(f'{type(exc).__name__}: {exc}')
 		result['traceback'] = traceback.format_exc()
 	finally:
-		result['duration_seconds'] = round(time.monotonic() - start, 2)
+		duration_seconds = round(time.monotonic() - start, 2)
+		try:
+			final_state = await capture_final_state(session)
+		except Exception as exc:
+			final_state = None
+			result['errors'].append(f'Final state capture failed: {type(exc).__name__}: {exc}')
+		result = enrich_mission_report(result, final_state=final_state, duration_seconds=duration_seconds)
 		try:
 			await session.stop()
 		except Exception as exc:

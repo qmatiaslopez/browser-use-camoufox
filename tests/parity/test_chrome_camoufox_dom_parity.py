@@ -1,8 +1,16 @@
 import importlib.util
+import threading
+from collections.abc import Iterator
+from contextlib import contextmanager
+from functools import partial
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from typing import Any
 
 import pytest
-from browser_use.browser.events import BrowserStateRequestEvent
+from browser_use.browser import BrowserSession
+from browser_use.browser.events import BrowserStateRequestEvent, ClickElementEvent
+from browser_use.dom.views import DOMSelectorMap
 
 from browser_use_camoufox import CamoufoxSession
 
@@ -12,6 +20,110 @@ assert REAL_WORLD_KIT_SPEC is not None
 real_world_kit = importlib.util.module_from_spec(REAL_WORLD_KIT_SPEC)
 assert REAL_WORLD_KIT_SPEC.loader is not None
 REAL_WORLD_KIT_SPEC.loader.exec_module(real_world_kit)
+
+CHROME_EXECUTABLE = Path.home() / '.cache/ms-playwright/chromium-1217/chrome-linux64/chrome'
+CHROME_TEST_ARGS = [
+	'--password-store=basic',
+	'--use-mock-keychain',
+	'--disable-save-password-bubble',
+	'--disable-features=PasswordManagerOnboarding,PasswordLeakDetection,AutofillServerCommunication',
+]
+GENERIC_CONTRACT_HTML = """
+<html>
+	<body>
+		<main>
+			<h1>Dashboard summary</h1>
+			<p class="status" data-state="ready" data-priority="high" aria-label="Ready status">
+				System ready
+			</p>
+			<div role="gridcell" aria-selected="true" data-value="42">Cell value</div>
+			<label><input id="enabled" type="checkbox" aria-checked="true" /> Enabled</label>
+			<button id="open" aria-expanded="false" onclick="this.textContent = 'Opened details'">Open details</button>
+			<button id="disabled" disabled aria-disabled="true">Disabled action</button>
+			<p id="hidden" style="display: none">Hidden text</p>
+		</main>
+	</body>
+</html>
+"""
+
+
+@contextmanager
+def serve_directory(directory: Path) -> Iterator[str]:
+	server = ThreadingHTTPServer(
+		('127.0.0.1', 0),
+		partial(SimpleHTTPRequestHandler, directory=str(directory)),
+	)
+	thread = threading.Thread(target=server.serve_forever, daemon=True)
+	thread.start()
+	try:
+		yield f'http://127.0.0.1:{server.server_port}'
+	finally:
+		server.shutdown()
+		thread.join()
+		server.server_close()
+
+
+def text_matches(llm_text: str, expected: list[str], unexpected: list[str]) -> dict[str, Any]:
+	return {
+		'present': [text for text in expected if text in llm_text],
+		'missing': [text for text in expected if text not in llm_text],
+		'unexpected_present': [text for text in unexpected if text in llm_text],
+	}
+
+
+def capture_attributes(selector_map: DOMSelectorMap) -> dict[str, str]:
+	captured: dict[str, str] = {}
+	for node in selector_map.values():
+		for name in ('aria-checked', 'aria-disabled', 'aria-expanded', 'aria-selected', 'data-state', 'data-value'):
+			if name in node.attributes:
+				captured[name] = node.attributes[name]
+	return captured
+
+
+async def capture_session_contract(session: BrowserSession | CamoufoxSession, url: str) -> dict[str, Any]:
+	try:
+		await session.start()
+		await session.navigate_to(url)
+		state_event = session.event_bus.dispatch(BrowserStateRequestEvent(include_dom=True, include_screenshot=False))
+		await state_event
+		state = await state_event.event_result(raise_if_any=True)
+		llm_text = state.dom_state.llm_representation()
+		selector_map = state.dom_state.selector_map
+		clickable_nodes = [
+			node for node in selector_map.values() if node.snapshot_node and node.snapshot_node.is_clickable
+		]
+		observable_nodes = [
+			node
+			for node in selector_map.values()
+			if node.attributes.get('data-browser-use-camoufox-observable') == 'true'
+			or (node.snapshot_node and node.snapshot_node.is_clickable is False)
+		]
+		open_node = next((node for node in selector_map.values() if node.attributes.get('id') == 'open'), None)
+		action_results: list[dict[str, Any]] = []
+		if open_node is not None:
+			try:
+				if isinstance(session, CamoufoxSession):
+					await session.on_ClickElementEvent(ClickElementEvent(node=open_node))
+				else:
+					page = await session.get_current_page()
+					await page.evaluate("() => document.querySelector('#open').click()")
+				action_results.append({'action': 'click-open', 'passed': True, 'summary': 'opened'})
+			except Exception as exc:
+				action_results.append({'action': 'click-open', 'passed': False, 'summary': str(exc)})
+		return {
+			'visible_text': text_matches(
+				llm_text,
+				['Dashboard summary', 'System ready', 'Cell value', 'Open details', 'Disabled action'],
+				['Hidden text'],
+			),
+			'attributes': capture_attributes(selector_map),
+			'actionable_count': len(clickable_nodes),
+			'observable_only_count': len(observable_nodes),
+			'action_results': action_results,
+			'llm_text': llm_text,
+		}
+	finally:
+		await session.stop()
 
 
 @pytest.mark.anyio
@@ -69,11 +181,56 @@ async def test_generic_dom_observation_contract_exposes_visible_semantics(tmp_pa
 		assert any(node.node_value == 'Cell value' for node in observable_only)
 		assert any(node.attributes.get('data-priority') == 'high' for node in observable_only)
 		assert any(node.attributes.get('aria-selected') == 'true' for node in observable_only)
-		assert any(node.attributes.get('aria-disabled') == 'true' for node in clickable)
+		disabled = next(
+			node for node in state.dom_state.selector_map.values() if node.attributes.get('aria-disabled') == 'true'
+		)
+		assert disabled.attributes['data-browser-use-camoufox-disabled'] == 'true'
+		assert disabled.attributes['data-browser-use-camoufox-observable'] == 'true'
+		assert disabled.snapshot_node is not None
+		assert disabled.snapshot_node.is_clickable is False
 		assert any(node.attributes.get('id') == 'open' for node in clickable)
 		assert not any(node.attributes.get('id') == 'hidden' for node in state.dom_state.selector_map.values())
 	finally:
 		await session.stop()
+
+
+@pytest.mark.anyio
+async def test_chrome_camoufox_generic_fixture_parity_matrix_uses_real_browser_capture(tmp_path: Path):
+	if not CHROME_EXECUTABLE.exists():
+		pytest.skip(f'Chrome executable not found: {CHROME_EXECUTABLE}')
+	fixture = tmp_path / 'generic-dom-contract.html'
+	fixture.write_text(GENERIC_CONTRACT_HTML)
+
+	with serve_directory(tmp_path) as base_url:
+		url = f'{base_url}/{fixture.name}'
+		chrome = await capture_session_contract(
+			BrowserSession(
+				headless=True,
+				executable_path=CHROME_EXECUTABLE,
+				args=CHROME_TEST_ARGS,
+				enable_default_extensions=False,
+				keep_alive=False,
+			),
+			url,
+		)
+		camoufox = await capture_session_contract(CamoufoxSession(headless=True), url)
+
+	assert chrome['visible_text']['unexpected_present'] == []
+	assert camoufox['visible_text']['unexpected_present'] == []
+	assert chrome['action_results'] and all(result['passed'] for result in chrome['action_results'])
+	assert camoufox['action_results'] and all(result['passed'] for result in camoufox['action_results'])
+
+	rows = [
+		{'runtime': 'chrome', 'fixture': 'generic-dom-contract', **chrome},
+		{'runtime': 'camoufox', 'fixture': 'generic-dom-contract', **camoufox},
+	]
+	report = real_world_kit.build_parity_matrix_report(rows)
+	runtime_report = report['fixtures'][0]['runtimes']['camoufox']
+
+	assert camoufox['visible_text']['missing'] == []
+	assert runtime_report['visible_text_parity'] is True
+	assert runtime_report['action_result_summary'] == [{'action': 'click-open', 'passed': True}]
+	assert 'Hidden text' not in report['json']
 
 
 def test_parity_matrix_report_summarizes_runtime_fixture_observation_and_actions():
@@ -121,3 +278,40 @@ def test_scrub_redacts_sensitive_keys_and_tokens(monkeypatch):
 		'data-token': '<redacted>',
 		'ok': 'ready',
 	}
+
+
+def test_mission_report_diagnostics_classify_runtime_tooling_failure():
+	report = real_world_kit.enrich_mission_report(
+		{
+			'passed': False,
+			'errors': ['RuntimeError: Tool click failed because target detached'],
+			'history': {
+				'action_names': ['navigate', 'click_element', 'extract_content'],
+				'urls': ['https://example.test/start', 'https://example.test/details'],
+				'errors': ['ClickElementError: target detached'],
+			},
+			'verification': {'passed': False, 'details': {'url': 'https://example.test/details'}, 'errors': []},
+		},
+		final_state={
+			'url': 'https://example.test/details',
+			'title': 'Details',
+			'body_text': 'Details page loaded with account_id=12345 and token abcdef',
+			'dom_metrics': {'element_count': 7, 'body_text_length': 54},
+		},
+		duration_seconds=1.25,
+	)
+
+	assert report['diagnostics']['final_state']['url'] == 'https://example.test/details'
+	assert report['diagnostics']['final_state']['title'] == 'Details'
+	assert report['diagnostics']['final_state']['body_excerpt']
+	assert report['diagnostics']['actions'] == {
+		'names': ['navigate', 'click_element', 'extract_content'],
+		'count': 3,
+	}
+	assert report['diagnostics']['duration_seconds'] == 1.25
+	assert report['diagnostics']['url_transitions'] == [
+		{'from': 'https://example.test/start', 'to': 'https://example.test/details'}
+	]
+	assert report['diagnostics']['runtime_tool_errors'] == ['ClickElementError: target detached']
+	assert report['failure_class'] == 'runtime/tooling'
+	assert 'abcdef' not in report['diagnostics']['final_state']['body_excerpt']

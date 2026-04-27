@@ -4,6 +4,7 @@ import pytest
 from browser_use.browser.events import BrowserStateRequestEvent, ClickElementEvent, SendKeysEvent, TypeTextEvent
 
 from browser_use_camoufox import CamoufoxSession
+from browser_use_camoufox.session import OBSERVABLE_ELEMENT_ATTRIBUTE
 
 
 @pytest.mark.anyio
@@ -191,5 +192,65 @@ async def test_type_text_rejects_observable_only_nodes_but_accepts_text_inputs(t
 		await session.on_TypeTextEvent(TypeTextEvent(node=input_node, clear=True, text='Ada'))
 		page = await session.get_current_page()
 		assert await page.locator('#name').input_value() == 'Ada'
+	finally:
+		await session.stop()
+
+
+@pytest.mark.anyio
+async def test_dense_page_keeps_main_semantic_content_when_observation_is_bounded(tmp_path: Path):
+	fixture = tmp_path / 'dense.html'
+	repeated_nav = '\n'.join(
+		f'<a class="side-link" href="#nav-{index}">Navigation filter {index}</a>' for index in range(360)
+	)
+	fixture.write_text(
+		f"""
+		<html>
+			<body>
+				<nav aria-label="Filters">
+					{repeated_nav}
+				</nav>
+				<main>
+					<article data-testid="primary-card" data-state="ready">
+						<h2>Primary result card</h2>
+						<p>Central semantic answer survives bounded output</p>
+					</article>
+					<ul aria-label="Central list">
+						<li data-testid="main-list-item">Important central list item</li>
+					</ul>
+				</main>
+			</body>
+		</html>
+		"""
+	)
+	session = CamoufoxSession(headless=True)
+
+	try:
+		await session.start()
+		await session.navigate_to(fixture.as_uri())
+		state_event = session.event_bus.dispatch(BrowserStateRequestEvent(include_dom=True, include_screenshot=False))
+		await state_event
+		state = await state_event.event_result()
+
+		llm_text = state.dom_state.llm_representation()
+		assert 'Primary result card' in llm_text
+		assert 'Central semantic answer survives bounded output' in llm_text
+		assert 'Important central list item' in llm_text
+		assert 'data-state=ready' in llm_text
+		assert len(state.dom_state.selector_map) <= 300
+		assert (
+			sum(1 for node in state.dom_state.selector_map.values() if node.attributes.get('class') == 'side-link')
+			< 300
+		)
+
+		primary_card = next(
+			node
+			for node in state.dom_state.selector_map.values()
+			if node.attributes.get('data-testid') == 'primary-card'
+		)
+		assert primary_card.attributes[OBSERVABLE_ELEMENT_ATTRIBUTE] == 'true'
+		assert primary_card.snapshot_node is not None
+		assert primary_card.snapshot_node.is_clickable is False
+		with pytest.raises(RuntimeError, match='observable but not clickable'):
+			await session.on_ClickElementEvent(ClickElementEvent(node=primary_card))
 	finally:
 		await session.stop()

@@ -1322,16 +1322,25 @@ class CamoufoxSession(BrowserSession):
 				};
 				const semanticTags = new Set([
 					'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'li', 'dt', 'dd', 'summary', 'figcaption',
-					'blockquote', 'caption', 'td', 'th',
+					'blockquote', 'caption', 'td', 'th', 'main', 'article', 'section', 'ul', 'ol', 'table',
 				]);
 				const semanticRoles = new Set([
 					'alert', 'article', 'cell', 'columnheader', 'gridcell', 'heading', 'note', 'rowheader',
-					'status', 'tabpanel',
+					'status', 'tabpanel', 'main', 'list', 'grid', 'table', 'region',
 				]);
+				const centralContainers = [
+					'main', '[role="main"]', 'article', '[role="article"]', '[role="list"]',
+					'ul', 'ol', '[role="grid"]', 'table',
+				].join(', ');
+				const repeatedChromeContainers = [
+					'nav', 'aside', 'header', 'footer', '[role="navigation"]', '[aria-label*="filter" i]',
+				].join(', ');
 				const ordinals = new Map();
 				const shadowHostSelector = '*';
 				const elementPayload = (element, shadowRootType = null) => {
 					const tagName = element.tagName.toLowerCase();
+					const inCentralContent = Boolean(element.closest(centralContainers));
+					const inRepeatedChrome = Boolean(element.closest(repeatedChromeContainers));
 					const isInteractive = selectorList.some((candidate) => element.matches(candidate));
 					const matchedSelector = selectorList.find((candidate) => element.matches(candidate)) || tagName;
 					let stableSelector = matchedSelector;
@@ -1396,17 +1405,21 @@ class CamoufoxSession(BrowserSession):
 						is_interactive: isInteractive && !disabled, is_observable: isObservable,
 						frame_id: args.frameId, frame_url: args.frameUrl,
 						shadow_root_type: shadowRootType,
+						priority:
+							(inCentralContent ? 1000 : 0)
+							- (inRepeatedChrome ? 100 : 0)
+							+ (isInteractive ? 10 : 0),
 						rect: {x: rect.x, y: rect.y, width: rect.width, height: rect.height},
 					};
 				};
 				const domRoot = document.body || document;
 				const elements = Array.from(domRoot.querySelectorAll('*'))
-					.map((element) => elementPayload(element))
+					.map((element, documentOrder) => ({...elementPayload(element), documentOrder}))
 					.filter((element) => element.is_visible && element.is_observable);
 				for (const host of Array.from(document.querySelectorAll(shadowHostSelector))) {
 					if (host.shadowRoot) {
 						const shadowElements = Array.from(host.shadowRoot.querySelectorAll('*'))
-							.map((element) => elementPayload(element, 'open'))
+							.map((element, documentOrder) => ({...elementPayload(element, 'open'), documentOrder}))
 							.filter((element) => element.is_visible && element.is_observable);
 						elements.push(...shadowElements);
 					} else if (host.localName.includes('-')) {
@@ -1414,7 +1427,13 @@ class CamoufoxSession(BrowserSession):
 						if (payload.is_visible) elements.push(payload);
 					}
 				}
-				return elements.slice(0, 300);
+				return elements
+					.map((element, index) => ({...element, originalOrder: element.documentOrder ?? index}))
+					.sort((left, right) => (
+						(right.priority - left.priority) || (left.originalOrder - right.originalOrder)
+					))
+					.slice(0, 300)
+					.sort((left, right) => left.originalOrder - right.originalOrder);
 			}""",
 				{
 					'frameId': 'main' if frame == page.main_frame else f'frame-{frame_index}',

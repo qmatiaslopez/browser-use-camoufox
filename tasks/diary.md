@@ -4,3 +4,5 @@
 - Added bounded redaction for sensitive marker values in diagnostic excerpts and kept focused Task 1 validators passing.
 - Completed Task 2: DOM observation, `search_page`, and `find_elements` now share normalized visible text behavior and bounded safe attribute capture that skips sensitive-looking attributes.
 - Added regression coverage for hidden text exclusion, cross-tool text normalization, safe attributes, selector metadata, and observable-only action boundaries; focused Task 2 validators pass.
+- Completed Task 3: bounded DOM observation now prioritizes central semantic containers and de-prioritizes repeated navigation/filter chrome while preserving observable-only action safety.
+- Added dense-page regression coverage and full validators pass (`ruff check`, `ruff format --check`, `pyright`, `pytest`).

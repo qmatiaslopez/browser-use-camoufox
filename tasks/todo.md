@@ -42,14 +42,14 @@ IMPORTANT: When a task is fully completed and its verification commands pass, up
 
 ## Phase 1: Dense-Page DOM Prioritization
 
-- [ ] Task 3: Prioritize central semantic content under observation limits
+- [x] Task 3: Prioritize central semantic content under observation limits
   - Acceptance:
-    - [ ] `<main>`, `[role=main]`, articles, lists, grids, tables, and card-like groups are retained when output is bounded.
-    - [ ] Repeated sidebars, filters, and navigation cannot consume the full observation budget when central content exists.
-    - [ ] Grouped observable units expose useful visible text and safe attributes without becoming clickable unless actually interactive.
+    - [x] `<main>`, `[role=main]`, articles, lists, grids, tables, and card-like groups are retained when output is bounded.
+    - [x] Repeated sidebars, filters, and navigation cannot consume the full observation budget when central content exists.
+    - [x] Grouped observable units expose useful visible text and safe attributes without becoming clickable unless actually interactive.
   - Verify:
-    - [ ] `uv run pytest -q tests/parity/test_chrome_camoufox_dom_parity.py`
-    - [ ] `uv run pytest -q tests/integration/test_dom_selector_reliability.py`
+    - [x] `uv run pytest -q tests/parity/test_chrome_camoufox_dom_parity.py`
+    - [x] `uv run pytest -q tests/integration/test_dom_selector_reliability.py`
   - Dependencies: Task 2
   - Files:
     - `src/browser_use_camoufox/session.py`

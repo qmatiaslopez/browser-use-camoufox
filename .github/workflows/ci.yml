@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: '17 6 * * 1'
+
+jobs:
+  validation:
+    name: Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: uv sync
+      - run: uv run camoufox fetch
+      - run: uv run pytest -v tests/unit tests/integration tests/parity
+      - run: uv run browser-use-camoufox doctor
+      - run: uv run browser-use-camoufox doctor --runtime-smoke
+      - run: uv run browser-use-camoufox compatibility --surface-inventory
+      - run: uv run browser-use-camoufox conformance --matrix current --fixtures-only
+      - run: uv run ruff check src tests scripts
+      - run: uv run ruff format --check src tests scripts
+      - run: uv run pyright
+      - run: uv run python -m ensurepip --default-pip
+      - run: uv run python -m pip check
+      - run: uv build
+      - name: Verify clean wheel install
+        run: |
+          python -m venv /tmp/browser-use-camoufox-verify
+          /tmp/browser-use-camoufox-verify/bin/python -m pip install dist/*.whl
+          /tmp/browser-use-camoufox-verify/bin/python -m pip check
+          /tmp/browser-use-camoufox-verify/bin/browser-use-camoufox doctor
+          /tmp/browser-use-camoufox-verify/bin/python -c "from browser_use_camoufox import CamoufoxSession; print(CamoufoxSession)"
+
+  latest-pypi:
+    name: Latest PyPI compatibility
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: uv sync
+      - run: uv run camoufox fetch
+      - run: uv run browser-use-camoufox compatibility --latest-pypi

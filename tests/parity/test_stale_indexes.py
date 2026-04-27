@@ -1,7 +1,7 @@
 from pathlib import Path
 
 import pytest
-from browser_use.browser.events import BrowserStateRequestEvent
+from browser_use.browser.events import BrowserStateRequestEvent, ClickElementEvent
 from browser_use.tools.service import Tools
 
 from browser_use_camoufox import CamoufoxSession, register_camoufox_tools
@@ -36,5 +36,47 @@ async def test_click_refreshes_stale_selector_index_before_failing(tmp_path: Pat
 
 		assert click_result.error is None
 		assert await page.locator('#new').text_content() == 'Clicked'
+	finally:
+		await session.stop()
+
+
+@pytest.mark.anyio
+async def test_direct_click_relocalizes_stale_target_once(tmp_path: Path):
+	fixture = tmp_path / 'relocalize.html'
+	fixture.write_text(
+		"""
+		<html><body>
+			<button class="choice">Other</button>
+			<button class="choice">Target</button>
+		</body></html>
+		"""
+	)
+	session = CamoufoxSession(headless=True)
+
+	try:
+		await session.start()
+		await session.navigate_to(fixture.as_uri())
+		state_event = session.event_bus.dispatch(BrowserStateRequestEvent(include_dom=True, include_screenshot=False))
+		await state_event
+		state = await state_event.event_result()
+		target = next(node for node in state.dom_state.selector_map.values() if node.node_value == 'Target')
+
+		page = await session.get_current_page()
+		await page.evaluate(
+			"""() => {
+				document.body.innerHTML = `
+					<button class="choice">Target</button>
+					<button class="choice">Other</button>
+				`;
+				document.querySelector('.choice').addEventListener(
+					'click',
+					event => event.target.setAttribute('data-clicked', 'true')
+				);
+			}"""
+		)
+
+		await session.on_ClickElementEvent(ClickElementEvent(node=target))
+
+		assert await page.locator('.choice').first.get_attribute('data-clicked') == 'true'
 	finally:
 		await session.stop()

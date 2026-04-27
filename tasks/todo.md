@@ -64,14 +64,14 @@ IMPORTANT: When a task is fully completed and its verification commands pass, up
 
 ## Phase 2: Dynamic DOM Action Recovery
 
-- [ ] Task 4: Add safe one-shot action relocalization
+- [x] Task 4: Add safe one-shot action relocalization
   - Acceptance:
-    - [ ] Recovery recaptures DOM at most once per action attempt.
-    - [ ] Recovery refuses disabled, observable-only, or ambiguous relocalized targets.
-    - [ ] Failure messages explain whether relocalization was unavailable, ambiguous, or blocked by safety checks.
+    - [x] Recovery recaptures DOM at most once per action attempt.
+    - [x] Recovery refuses disabled, observable-only, or ambiguous relocalized targets.
+    - [x] Failure messages explain whether relocalization was unavailable, ambiguous, or blocked by safety checks.
   - Verify:
-    - [ ] `uv run pytest -q tests/parity/test_stale_indexes.py`
-    - [ ] `uv run pytest -q tests/integration/test_dom_selector_reliability.py`
+    - [x] `uv run pytest -q tests/parity/test_stale_indexes.py`
+    - [x] `uv run pytest -q tests/integration/test_dom_selector_reliability.py`
   - Dependencies: Task 2
   - Files:
     - `src/browser_use_camoufox/session.py`

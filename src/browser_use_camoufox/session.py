@@ -448,10 +448,11 @@ class CamoufoxSession(BrowserSession):
 				f'Element {event.node.node_id} is observable but not clickable. '
 				'Use the keyboard, an interactive control, or evaluate/read tools instead.'
 			)
+		node = await self._relocalize_action_node(event.node)
 		try:
-			await self._locator_for_node(event.node).click(button=event.button, timeout=CLICK_TIMEOUT_MS)
+			await self._locator_for_node(node).click(button=event.button, timeout=CLICK_TIMEOUT_MS)
 		except Error as exc:
-			raise RuntimeError(self._click_error_message(event.node, exc)) from exc
+			raise RuntimeError(self._click_error_message(node, exc)) from exc
 		return None
 
 	async def on_ClickCoordinateEvent(self, event: ClickCoordinateEvent) -> dict[str, int]:
@@ -1233,6 +1234,40 @@ class CamoufoxSession(BrowserSession):
 	async def _get_fresh_node(self, index: int) -> EnhancedDOMTreeNode | None:
 		await self._get_dom_state()
 		return self._cached_selector_map.get(index)
+
+	async def _relocalize_action_node(self, node: EnhancedDOMTreeNode) -> EnhancedDOMTreeNode:
+		await self._get_dom_state()
+		signature = self._action_node_signature(node)
+		if signature is None:
+			return self._cached_selector_map.get(node.node_id, node)
+		matches = [
+			candidate
+			for candidate in self._cached_selector_map.values()
+			if self._action_node_signature(candidate) == signature
+		]
+		if not matches:
+			raise RuntimeError(f'Element {node.node_id} relocalization unavailable after DOM refresh.')
+		actionable_matches = [
+			candidate
+			for candidate in matches
+			if candidate.attributes.get('data-browser-use-camoufox-disabled') != 'true'
+			and candidate.attributes.get(OBSERVABLE_ELEMENT_ATTRIBUTE) != 'true'
+		]
+		if len(actionable_matches) != 1:
+			raise RuntimeError(
+				f'Element {node.node_id} relocalization ambiguous or blocked by safety checks: '
+				f'{len(matches)} candidate(s), {len(actionable_matches)} actionable.'
+			)
+		return actionable_matches[0]
+
+	def _action_node_signature(self, node: EnhancedDOMTreeNode) -> tuple[str, str, str, str, str] | None:
+		selector = node.attributes.get('data-browser-use-camoufox-selector')
+		frame = node.attributes.get('data-browser-use-camoufox-frame', 'main')
+		frame_url = node.attributes.get('data-browser-use-camoufox-frame-url', '')
+		text = node.node_value.strip()
+		if not selector or not text:
+			return None
+		return (node.tag_name.upper(), selector, frame, frame_url, text)
 
 	def _missing_index_result(self, index: int) -> ActionResult:
 		url = self._page.url if self._page is not None else 'about:blank'

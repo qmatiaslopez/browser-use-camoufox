@@ -6,3 +6,5 @@
 - Added regression coverage for hidden text exclusion, cross-tool text normalization, safe attributes, selector metadata, and observable-only action boundaries; focused Task 2 validators pass.
 - Completed Task 3: bounded DOM observation now prioritizes central semantic containers and de-prioritizes repeated navigation/filter chrome while preserving observable-only action safety.
 - Added dense-page regression coverage and full validators pass (`ruff check`, `ruff format --check`, `pyright`, `pytest`).
+- Completed Task 4: click actions now perform a single DOM recapture/relocalization by stable target signature and reject unavailable, ambiguous, disabled, or observable-only recovery candidates.
+- Added stale target relocalization coverage; full validators and package build pass (`ruff check`, `ruff format --check`, `pyright`, `pytest`, `uv build`).

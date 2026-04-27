@@ -70,3 +70,12 @@
   - `uv run pyright`
   - `uv run pytest -q`
   - `uv build`
+- Completed Task 8: frame-detach click handling now retries once by recapturing current frame DOM and matching the original target against reappeared same-URL frames while preserving ambiguity and unavailable-target failures.
+- Added generic iframe fixtures for successful reappearance recovery and clear `frame/target unavailable` failure diagnostics.
+- Task 8 validators pass:
+  - `uv run pytest -q tests/parity/test_iframe_dom.py tests/parity/test_stale_indexes.py`
+  - `uv run ruff check src tests scripts`
+  - `uv run ruff format --check src tests scripts`
+  - `uv run pyright`
+  - `uv run pytest -q`
+  - `uv build`

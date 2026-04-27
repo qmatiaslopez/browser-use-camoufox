@@ -213,3 +213,107 @@ async def test_duplicate_iframe_urls_resolve_intended_frame(tmp_path: Path):
 		assert await second_frame.locator('.frame-button').text_content() == 'Clicked second-frame'
 	finally:
 		await session.stop()
+
+
+@pytest.mark.anyio
+async def test_frame_detach_click_recaptures_reappeared_target_once(tmp_path: Path):
+	iframe = tmp_path / 'detached.html'
+	iframe.write_text(
+		"""
+		<html>
+			<body>
+				<button id="recaptured-button" onclick="parent.document.body.dataset.clicked = 'true'">
+					Recaptured button
+				</button>
+			</body>
+		</html>
+		"""
+	)
+	fixture = tmp_path / 'page.html'
+	fixture.write_text(
+		f"""
+		<html>
+			<body>
+				<iframe id="dynamic-frame" src="{iframe.as_uri()}"></iframe>
+				<script>
+					window.recreateFrame = () => {{
+						document.querySelector('#dynamic-frame')?.remove();
+						const frame = document.createElement('iframe');
+						frame.id = 'dynamic-frame';
+						frame.src = '{iframe.as_uri()}';
+						document.body.appendChild(frame);
+					}};
+				</script>
+			</body>
+		</html>
+		"""
+	)
+	session = CamoufoxSession(headless=True)
+
+	try:
+		await session.start()
+		await session.navigate_to(fixture.as_uri())
+		state_event = session.event_bus.dispatch(BrowserStateRequestEvent(include_dom=True, include_screenshot=False))
+		await state_event
+		state = await state_event.event_result()
+		button = next(
+			node for node in state.dom_state.selector_map.values() if node.attributes.get('id') == 'recaptured-button'
+		)
+
+		page = await session.get_current_page()
+		await page.evaluate(
+			"""(url) => {
+				document.querySelector('#dynamic-frame')?.remove();
+				const frame = document.createElement('iframe');
+				frame.id = 'dynamic-frame';
+				frame.src = url;
+				document.body.appendChild(frame);
+			}""",
+			iframe.as_uri(),
+		)
+		await page.wait_for_selector('#dynamic-frame')
+		button.attributes['data-browser-use-camoufox-frame'] = 'frame-detached'
+
+		await session.event_bus.dispatch(ClickElementEvent(node=button))
+
+		assert await page.locator('body').get_attribute('data-clicked') == 'true'
+		diagnostics = getattr(session, '_last_click_diagnostics')
+		assert diagnostics['fallback']['result'] == 'frame_detach_retry_succeeded'
+		assert diagnostics['fallback']['attempted'] == ['click', 'frame_detach_retry']
+	finally:
+		await session.stop()
+
+
+@pytest.mark.anyio
+async def test_frame_detach_click_reports_unavailable_target(tmp_path: Path):
+	iframe = tmp_path / 'gone.html'
+	iframe.write_text('<html><body><button id="gone-button">Gone button</button></body></html>')
+	fixture = tmp_path / 'page.html'
+	fixture.write_text(
+		f"""
+		<html>
+			<body>
+				<iframe id="dynamic-frame" src="{iframe.as_uri()}"></iframe>
+			</body>
+		</html>
+		"""
+	)
+	session = CamoufoxSession(headless=True)
+
+	try:
+		await session.start()
+		await session.navigate_to(fixture.as_uri())
+		state_event = session.event_bus.dispatch(BrowserStateRequestEvent(include_dom=True, include_screenshot=False))
+		await state_event
+		state = await state_event.event_result()
+		button = next(
+			node for node in state.dom_state.selector_map.values() if node.attributes.get('id') == 'gone-button'
+		)
+
+		page = await session.get_current_page()
+		await page.locator('#dynamic-frame').evaluate('(frame) => frame.remove()')
+
+		with pytest.raises(RuntimeError, match='frame/target unavailable'):
+			await session.on_ClickElementEvent(ClickElementEvent(node=button))
+	finally:
+		await session.stop()

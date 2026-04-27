@@ -121,13 +121,13 @@ IMPORTANT: When a task is fully completed and its verification commands pass, up
     - `tests/integration/test_interaction_events.py`
     - `tests/parity/test_forms_dropdown_upload.py`
 
-- [ ] Task 8: Add frame-detach recapture and retry
+- [x] Task 8: Add frame-detach recapture and retry
   - Acceptance:
-    - [ ] Generic detach fixture retries once and succeeds if the target reappears.
-    - [ ] Retry is bounded and reports frame-detach recovery diagnostics.
-    - [ ] If the target does not reappear, failure clearly says frame/target unavailable.
+    - [x] Generic detach fixture retries once and succeeds if the target reappears.
+    - [x] Retry is bounded and reports frame-detach recovery diagnostics.
+    - [x] If the target does not reappear, failure clearly says frame/target unavailable.
   - Verify:
-    - [ ] `uv run pytest -q tests/parity/test_iframe_dom.py tests/parity/test_stale_indexes.py`
+    - [x] `uv run pytest -q tests/parity/test_iframe_dom.py tests/parity/test_stale_indexes.py`
   - Dependencies: Task 7
   - Files:
     - `src/browser_use_camoufox/session.py`

@@ -452,9 +452,18 @@ class CamoufoxSession(BrowserSession):
 				f'Element {event.node.node_id} is observable but not clickable. '
 				'Use the keyboard, an interactive control, or evaluate/read tools instead.'
 			)
-		node = await self._relocalize_action_node(event.node)
+		frame_detach_retry = False
+		try:
+			node = await self._relocalize_action_node(event.node)
+		except RuntimeError as exc:
+			if not self._is_frame_target_unavailable(event.node, exc):
+				raise
+			node = await self._retry_frame_detach_relocalization(event.node)
+			frame_detach_retry = True
 		before = await self._capture_click_state(node)
 		fallback_attempted = ['click']
+		if frame_detach_retry:
+			fallback_attempted.append('frame_detach_retry')
 		click_failed = False
 		try:
 			locator = self._locator_for_node(node)
@@ -468,6 +477,8 @@ class CamoufoxSession(BrowserSession):
 				raise RuntimeError(self._click_error_message(node, exc, fallback_attempted, 'failed')) from exc
 		after = await self._capture_click_state(node)
 		diagnostics = self._click_change_diagnostics(before, after)
+		if frame_detach_retry:
+			diagnostics['fallback'] = {'attempted': fallback_attempted}
 		if (
 			fallback_attempted == ['click']
 			and event.button == 'left'
@@ -497,13 +508,18 @@ class CamoufoxSession(BrowserSession):
 			await self._submit_associated_form(node)
 			after = await self._capture_click_state(node)
 			diagnostics = self._click_change_diagnostics(before, after)
-		diagnostics['fallback'] = {
-			'attempted': fallback_attempted,
-			'result': f'{fallback_attempted[-1]}_succeeded'
+		fallback_result = (
+			'frame_detach_retry_succeeded'
+			if frame_detach_retry
+			else f'{fallback_attempted[-1]}_succeeded'
 			if fallback_attempted[-1] != 'click' and self._click_state_changed(diagnostics)
 			else 'click_succeeded'
 			if self._click_state_changed(diagnostics)
-			else 'no_change_detected',
+			else 'no_change_detected'
+		)
+		diagnostics['fallback'] = {
+			'attempted': fallback_attempted,
+			'result': fallback_result,
 		}
 		object.__setattr__(self, '_last_click_diagnostics', diagnostics)
 		if (
@@ -1497,6 +1513,8 @@ class CamoufoxSession(BrowserSession):
 		]
 		scored_matches = [(candidate, score) for candidate, score in candidate_scores if score > 0]
 		if not scored_matches:
+			if node.attributes.get('data-browser-use-camoufox-frame', 'main') != 'main':
+				raise RuntimeError(f'Element {node.node_id} frame/target unavailable after DOM refresh.')
 			fallback = self._cached_selector_map.get(node.node_id)
 			if fallback is not None and self._is_actionable_candidate(fallback):
 				return fallback
@@ -1512,19 +1530,53 @@ class CamoufoxSession(BrowserSession):
 			f'{len(scored_matches)} actionable candidate(s), candidate_ranking={top_scores}'
 		)
 
+	def _is_frame_target_unavailable(self, node: EnhancedDOMTreeNode, exc: RuntimeError) -> bool:
+		return node.attributes.get('data-browser-use-camoufox-frame', 'main') != 'main' and (
+			'relocalization unavailable' in str(exc) or 'frame/target unavailable' in str(exc)
+		)
+
+	async def _retry_frame_detach_relocalization(self, node: EnhancedDOMTreeNode) -> EnhancedDOMTreeNode:
+		await self._get_dom_state()
+		original_frame_url = node.attributes.get('data-browser-use-camoufox-frame-url', '')
+		candidate_scores = [
+			(candidate, self._action_node_match_score(node, candidate, ignore_frame_id=True))
+			for candidate in self._cached_selector_map.values()
+			if self._is_actionable_candidate(candidate)
+			and candidate.attributes.get('data-browser-use-camoufox-frame', 'main') != 'main'
+			and candidate.attributes.get('data-browser-use-camoufox-frame-url', '') == original_frame_url
+		]
+		scored_matches = [(candidate, score) for candidate, score in candidate_scores if score > 0]
+		if not scored_matches:
+			raise RuntimeError(f'Camoufox frame/target unavailable after frame-detach retry for node {node.node_id}.')
+		scored_matches.sort(key=lambda item: (-item[1], item[0].node_id))
+		best_score = scored_matches[0][1]
+		best_matches = [candidate for candidate, score in scored_matches if score == best_score]
+		if len(best_matches) == 1:
+			return best_matches[0]
+		top_scores = self._candidate_ranking_diagnostics(scored_matches)
+		raise RuntimeError(
+			f'Ambiguous frame-detach relocalization for node {node.node_id}: '
+			f'{len(scored_matches)} actionable candidate(s), candidate_ranking={top_scores}'
+		)
+
 	def _is_actionable_candidate(self, node: EnhancedDOMTreeNode) -> bool:
 		return (
 			node.attributes.get('data-browser-use-camoufox-disabled') != 'true'
 			and node.attributes.get(OBSERVABLE_ELEMENT_ATTRIBUTE) != 'true'
 		)
 
-	def _action_node_match_score(self, original: EnhancedDOMTreeNode, candidate: EnhancedDOMTreeNode) -> int:
+	def _action_node_match_score(
+		self,
+		original: EnhancedDOMTreeNode,
+		candidate: EnhancedDOMTreeNode,
+		ignore_frame_id: bool = False,
+	) -> int:
 		score = 0
 		if original.tag_name.upper() != candidate.tag_name.upper():
 			return 0
-		if original.attributes.get('data-browser-use-camoufox-frame', 'main') != candidate.attributes.get(
+		if not ignore_frame_id and original.attributes.get(
 			'data-browser-use-camoufox-frame', 'main'
-		):
+		) != candidate.attributes.get('data-browser-use-camoufox-frame', 'main'):
 			return 0
 		if original.attributes.get('data-browser-use-camoufox-frame-url', '') != candidate.attributes.get(
 			'data-browser-use-camoufox-frame-url', ''
@@ -1810,7 +1862,12 @@ class CamoufoxSession(BrowserSession):
 
 	def _click_state_changed(self, diagnostics: dict[str, Any]) -> bool:
 		target_attributes = cast(dict[str, Any], diagnostics.get('target_attributes') or {})
-		return bool(self._click_page_changed(diagnostics) or target_attributes.get('changed'))
+		fallback = cast(dict[str, Any], diagnostics.get('fallback') or {})
+		return bool(
+			self._click_page_changed(diagnostics)
+			or target_attributes.get('changed')
+			or fallback.get('attempted') == ['click', 'frame_detach_retry']
+		)
 
 	def _click_page_changed(self, diagnostics: dict[str, Any]) -> bool:
 		return bool(

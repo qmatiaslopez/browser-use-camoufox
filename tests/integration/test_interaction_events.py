@@ -4,6 +4,7 @@ import pytest
 from browser_use.browser.events import (
 	BrowserStateRequestEvent,
 	ClickCoordinateEvent,
+	ClickElementEvent,
 	ScrollToTextEvent,
 )
 
@@ -85,5 +86,58 @@ async def test_camoufox_highlight_interaction_element_marks_and_clears_node(tmp_
 		page = await session.get_current_page()
 		assert await page.locator('[data-browser-use-camoufox-highlight]').count() == 1
 		assert await page.locator('#target').evaluate("element => element.style.outline.includes('rgb(255, 152, 0)')")
+	finally:
+		await session.stop()
+
+
+@pytest.mark.anyio
+async def test_click_records_bounded_post_click_change_diagnostics(tmp_path: Path):
+	fixture = tmp_path / 'click_diagnostics.html'
+	fixture.write_text(
+		"""
+		<html>
+			<head><title>Before click</title></head>
+			<body>
+				<button
+					id="target"
+					data-state="ready"
+					data-token="secret-token-value"
+					onclick="
+						this.setAttribute('data-state', 'done');
+						document.title = 'After click';
+						document.querySelector('#status').textContent = 'Clicked result visible';
+						document.body.appendChild(document.createElement('section')).textContent = 'New panel';
+					"
+				>
+					Run action
+				</button>
+				<p id="status">Waiting result</p>
+			</body>
+		</html>
+		"""
+	)
+
+	session = CamoufoxSession(headless=True)
+
+	try:
+		await session.start()
+		await session.navigate_to(fixture.as_uri())
+		state_event = session.event_bus.dispatch(BrowserStateRequestEvent(include_dom=True, include_screenshot=False))
+		await state_event
+		state = await state_event.event_result()
+		button = next(node for node in state.dom_state.selector_map.values() if node.attributes.get('id') == 'target')
+
+		await session.on_ClickElementEvent(ClickElementEvent(node=button))
+
+		diagnostics = session.last_click_diagnostics
+		assert diagnostics is not None
+		assert diagnostics['url_changed'] is False
+		assert diagnostics['title'] == {'before': 'Before click', 'after': 'After click', 'changed': True}
+		assert diagnostics['dom_count']['after'] > diagnostics['dom_count']['before']
+		assert diagnostics['visible_text_change']['changed'] is True
+		assert 'Clicked result visible' in diagnostics['visible_text_change']['after_excerpt']
+		assert diagnostics['target_attributes']['before']['data-state'] == 'ready'
+		assert diagnostics['target_attributes']['after']['data-state'] == 'done'
+		assert 'data-token' not in diagnostics['target_attributes']['before']
 	finally:
 		await session.stop()

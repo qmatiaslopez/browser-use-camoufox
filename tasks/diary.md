@@ -8,3 +8,5 @@
 - Added dense-page regression coverage and full validators pass (`ruff check`, `ruff format --check`, `pyright`, `pytest`).
 - Completed Task 4: click actions now perform a single DOM recapture/relocalization by stable target signature and reject unavailable, ambiguous, disabled, or observable-only recovery candidates.
 - Added stale target relocalization coverage; full validators and package build pass (`ruff check`, `ruff format --check`, `pyright`, `pytest`, `uv build`).
+- Completed Task 5: successful element clicks now record bounded post-click diagnostics for URL/title changes, DOM count deltas, visible text excerpts, and safe target attribute changes without changing the existing successful click return value.
+- Added click diagnostic regression coverage with sensitive attribute omission; focused Task 5 validators, pyright, and package build pass.

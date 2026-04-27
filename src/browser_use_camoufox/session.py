@@ -323,6 +323,7 @@ class CamoufoxSession(BrowserSession):
 		self._cached_selector_map: dict[int, EnhancedDOMTreeNode] = {}
 		self._selector_targets: dict[int, dict[str, Any]] = {}
 		self._recording_rejected = False
+		object.__setattr__(self, '_last_click_diagnostics', None)
 		self._register_camoufox_event_handlers()
 
 	async def start(self) -> None:
@@ -449,10 +450,13 @@ class CamoufoxSession(BrowserSession):
 				'Use the keyboard, an interactive control, or evaluate/read tools instead.'
 			)
 		node = await self._relocalize_action_node(event.node)
+		before = await self._capture_click_state(node)
 		try:
 			await self._locator_for_node(node).click(button=event.button, timeout=CLICK_TIMEOUT_MS)
 		except Error as exc:
 			raise RuntimeError(self._click_error_message(node, exc)) from exc
+		after = await self._capture_click_state(node)
+		object.__setattr__(self, '_last_click_diagnostics', self._click_change_diagnostics(before, after))
 		return None
 
 	async def on_ClickCoordinateEvent(self, event: ClickCoordinateEvent) -> dict[str, int]:
@@ -848,6 +852,11 @@ class CamoufoxSession(BrowserSession):
 
 	def extra_http_headers(self) -> dict[str, str]:
 		return dict(self._context_options.get('headers') or {})
+
+	@property
+	def last_click_diagnostics(self) -> dict[str, Any] | None:
+		diagnostics = getattr(self, '_last_click_diagnostics', None)
+		return dict(diagnostics) if isinstance(diagnostics, dict) else None
 
 	async def get_selector_map(self) -> dict[int, EnhancedDOMTreeNode]:
 		return (await self._get_dom_state()).selector_map
@@ -1312,6 +1321,78 @@ class CamoufoxSession(BrowserSession):
 			details.append(f'text={text[:120]}')
 		details.append(f'playwright_error={str(exc).splitlines()[0]}')
 		return '; '.join(details)
+
+	async def _capture_click_state(self, node: EnhancedDOMTreeNode) -> dict[str, Any]:
+		page = await self._ensure_page()
+		target_attributes: dict[str, str] = {}
+		try:
+			raw_attributes = await self._locator_for_node(node).evaluate(
+				"""(element) => Object.fromEntries(
+					Array.from(element.attributes).map((attribute) => [attribute.name, attribute.value])
+				)"""
+			)
+			target_attributes = self._safe_attribute_snapshot(raw_attributes)
+		except Error:
+			target_attributes = {}
+		body_metrics = await page.locator('body').evaluate(
+			"""(body) => ({
+				text: (body.innerText || '').replace(/\\s+/g, ' ').trim().slice(0, 400),
+				count: body.querySelectorAll('*').length,
+			})"""
+		)
+		return {
+			'url': page.url,
+			'title': await page.title(),
+			'dom_count': int(body_metrics.get('count') or 0) if isinstance(body_metrics, dict) else 0,
+			'visible_text': str(body_metrics.get('text') or '') if isinstance(body_metrics, dict) else '',
+			'target_attributes': target_attributes,
+		}
+
+	def _click_change_diagnostics(self, before: dict[str, Any], after: dict[str, Any]) -> dict[str, Any]:
+		before_text = str(before.get('visible_text') or '')
+		after_text = str(after.get('visible_text') or '')
+		before_attrs = cast(dict[str, str], before.get('target_attributes') or {})
+		after_attrs = cast(dict[str, str], after.get('target_attributes') or {})
+		return {
+			'url_changed': before.get('url') != after.get('url'),
+			'url': {
+				'before': before.get('url'),
+				'after': after.get('url'),
+				'changed': before.get('url') != after.get('url'),
+			},
+			'title': {
+				'before': before.get('title'),
+				'after': after.get('title'),
+				'changed': before.get('title') != after.get('title'),
+			},
+			'dom_count': {
+				'before': before.get('dom_count'),
+				'after': after.get('dom_count'),
+				'changed': before.get('dom_count') != after.get('dom_count'),
+			},
+			'visible_text_change': {
+				'changed': before_text != after_text,
+				'before_excerpt': before_text[:200],
+				'after_excerpt': after_text[:200],
+			},
+			'target_attributes': {
+				'before': before_attrs,
+				'after': after_attrs,
+				'changed': before_attrs != after_attrs,
+			},
+		}
+
+	def _safe_attribute_snapshot(self, attributes: Any) -> dict[str, str]:
+		if not isinstance(attributes, dict):
+			return {}
+		safe_attributes: dict[str, str] = {}
+		for key, value in attributes.items():
+			name = str(key)
+			normalized_name = name.lower()
+			if any(marker in normalized_name for marker in SENSITIVE_ATTRIBUTE_MARKERS):
+				continue
+			safe_attributes[name] = re.sub(r'\s+', ' ', str(value)).strip()[:MAX_SAFE_ATTRIBUTE_VALUE_LENGTH]
+		return safe_attributes
 
 	def _should_type_keyboard_text(self, keys: str) -> bool:
 		if len(keys) <= 1:

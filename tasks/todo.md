@@ -78,14 +78,14 @@ IMPORTANT: When a task is fully completed and its verification commands pass, up
     - `tests/parity/test_stale_indexes.py`
     - `tests/integration/test_dom_selector_reliability.py`
 
-- [ ] Task 5: Add post-click change diagnostics
+- [x] Task 5: Add post-click change diagnostics
   - Acceptance:
-    - [ ] Click diagnostics include URL/title change, DOM count change, visible text change summary, and target attribute change when available.
-    - [ ] Diagnostics are bounded and redact sensitive-looking values.
-    - [ ] Successful clicks keep existing return behavior unless the public contract requires a diagnostic result.
+    - [x] Click diagnostics include URL/title change, DOM count change, visible text change summary, and target attribute change when available.
+    - [x] Diagnostics are bounded and redact sensitive-looking values.
+    - [x] Successful clicks keep existing return behavior unless the public contract requires a diagnostic result.
   - Verify:
-    - [ ] `uv run pytest -q tests/integration/test_interaction_events.py`
-    - [ ] `uv run pytest -q tests/parity/test_stale_indexes.py`
+    - [x] `uv run pytest -q tests/integration/test_interaction_events.py`
+    - [x] `uv run pytest -q tests/parity/test_stale_indexes.py`
   - Dependencies: Task 4
   - Files:
     - `src/browser_use_camoufox/session.py`

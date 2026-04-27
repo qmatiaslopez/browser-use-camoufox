@@ -150,3 +150,61 @@ async def test_get_html_returns_selected_outer_html_without_cdp(tmp_path: Path):
 		assert 'Ignore me' not in html
 	finally:
 		await session.stop()
+
+
+@pytest.mark.anyio
+async def test_find_elements_defaults_include_state_and_text_content(tmp_path: Path):
+	fixture = tmp_path / 'find-elements.html'
+	fixture.write_text(
+		"""
+		<html>
+			<body>
+				<div data-testid="tile" data-state="present" aria-label="A present">
+					<span>A</span>
+				</div>
+			</body>
+		</html>
+		"""
+	)
+	session = CamoufoxSession(headless=True)
+	tools = Tools()
+	register_camoufox_tools(tools)
+
+	try:
+		await session.start()
+		await session.navigate_to(fixture.as_uri())
+
+		result = await tools.registry.execute_action(
+			'find_elements', {'selector': '[data-testid="tile"]'}, browser_session=session
+		)
+
+		assert result.error is None
+		assert 'data-state="present"' in result.extracted_content
+		assert 'aria-label="A present"' in result.extracted_content
+		assert '> A' in result.extracted_content
+	finally:
+		await session.stop()
+
+
+@pytest.mark.anyio
+async def test_evaluate_script_returns_json_for_structured_values(tmp_path: Path):
+	fixture = tmp_path / 'evaluate.html'
+	fixture.write_text('<html><body><p>Evaluate</p></body></html>')
+	session = CamoufoxSession(headless=True)
+	tools = Tools()
+	register_camoufox_tools(tools)
+
+	try:
+		await session.start()
+		await session.navigate_to(fixture.as_uri())
+
+		result = await tools.registry.execute_action(
+			'evaluate',
+			{'code': '() => [{letter: "G", state: "correct"}, {letter: "L", state: "present"}]'},
+			browser_session=session,
+		)
+
+		assert result.error is None
+		assert result.extracted_content == '[{"letter": "G", "state": "correct"}, {"letter": "L", "state": "present"}]'
+	finally:
+		await session.stop()

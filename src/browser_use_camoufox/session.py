@@ -59,6 +59,64 @@ from pydantic import BaseModel
 from browser_use_camoufox.compat.detector import check_browser_use_compatibility
 
 _MCP_COMPAT_APPLIED = False
+DEFAULT_FIND_ELEMENT_ATTRIBUTES = [
+	'id',
+	'class',
+	'name',
+	'type',
+	'role',
+	'href',
+	'title',
+	'value',
+	'placeholder',
+	'alt',
+	'aria-label',
+	'aria-expanded',
+	'aria-checked',
+	'aria-selected',
+	'aria-disabled',
+	'data-testid',
+	'data-test',
+	'data-value',
+	'data-state',
+]
+OBSERVABLE_ELEMENT_ATTRIBUTE = 'data-browser-use-camoufox-observable'
+CLICK_TIMEOUT_MS = 5_000
+PLAYWRIGHT_SPECIAL_KEYS = frozenset(
+	{
+		'Alt',
+		'ArrowDown',
+		'ArrowLeft',
+		'ArrowRight',
+		'ArrowUp',
+		'Backspace',
+		'Control',
+		'Delete',
+		'End',
+		'Enter',
+		'Escape',
+		'F1',
+		'F2',
+		'F3',
+		'F4',
+		'F5',
+		'F6',
+		'F7',
+		'F8',
+		'F9',
+		'F10',
+		'F11',
+		'F12',
+		'Home',
+		'Insert',
+		'Meta',
+		'PageDown',
+		'PageUp',
+		'Shift',
+		'Space',
+		'Tab',
+	}
+)
 
 
 class NoFakeCDPClient:
@@ -367,7 +425,15 @@ class CamoufoxSession(BrowserSession):
 	async def on_ClickElementEvent(self, event: ClickElementEvent) -> dict[str, Any] | None:
 		if event.node.attributes.get('type') == 'file':
 			raise RuntimeError('File inputs require upload support; use the upload-file compatibility path instead.')
-		await self._locator_for_node(event.node).click(button=event.button)
+		if event.node.attributes.get(OBSERVABLE_ELEMENT_ATTRIBUTE) == 'true':
+			raise RuntimeError(
+				f'Element {event.node.node_id} is observable but not clickable. '
+				'Use the keyboard, an interactive control, or evaluate/read tools instead.'
+			)
+		try:
+			await self._locator_for_node(event.node).click(button=event.button, timeout=CLICK_TIMEOUT_MS)
+		except Error as exc:
+			raise RuntimeError(self._click_error_message(event.node, exc)) from exc
 		return None
 
 	async def on_ClickCoordinateEvent(self, event: ClickCoordinateEvent) -> dict[str, int]:
@@ -402,6 +468,9 @@ class CamoufoxSession(BrowserSession):
 
 	async def on_SendKeysEvent(self, event: SendKeysEvent) -> None:
 		page = await self._ensure_page()
+		if self._should_type_keyboard_text(event.keys):
+			await page.keyboard.type(event.keys)
+			return
 		await page.keyboard.press(event.keys)
 
 	async def on_GetDropdownOptionsEvent(self, event: GetDropdownOptionsEvent) -> dict[str, str]:
@@ -539,17 +608,21 @@ class CamoufoxSession(BrowserSession):
 
 	async def find_elements(self, params: FindElementsAction) -> ActionResult:
 		page = await self._ensure_page()
+		attributes = params.attributes if params.attributes is not None else DEFAULT_FIND_ELEMENT_ATTRIBUTES
 		data = await page.locator(params.selector).evaluate_all(
 			"""(elements, args) => elements.slice(0, args.maxResults).map((element) => {
 				const attributes = {};
 				for (const name of args.attributes || []) attributes[name] = element.getAttribute(name);
+				const rawText = args.includeText
+					? (element.textContent || element.innerText || element.value || '')
+					: '';
 				return {
 					tag: element.tagName.toLowerCase(),
-					text: args.includeText ? element.innerText : '',
+					text: rawText.replace(/\\s+/g, ' ').trim(),
 					attributes,
 				};
 			})""",
-			{'attributes': params.attributes, 'includeText': params.include_text, 'maxResults': params.max_results},
+			{'attributes': attributes, 'includeText': params.include_text, 'maxResults': params.max_results},
 		)
 		lines = [f'Found {len(data)} elements matching "{params.selector}":']
 		for item in data:
@@ -1041,6 +1114,8 @@ class CamoufoxSession(BrowserSession):
 			attributes['data-browser-use-camoufox-ordinal'] = str(target['ordinal'])
 			attributes['data-browser-use-camoufox-disabled'] = str(bool(element.get('is_disabled', False))).lower()
 			attributes['data-browser-use-camoufox-frame'] = str(target['frame_id'])
+			if not element.get('is_interactive', True):
+				attributes[OBSERVABLE_ELEMENT_ATTRIBUTE] = 'true'
 			if target['frame_url']:
 				attributes['data-browser-use-camoufox-frame-url'] = str(target['frame_url'])
 			if target['shadow_root_type']:
@@ -1135,6 +1210,34 @@ class CamoufoxSession(BrowserSession):
 			return frame.locator(str(selector)).nth(int(ordinal))
 		return page.locator(str(selector)).nth(int(ordinal))
 
+	def _click_error_message(self, node: EnhancedDOMTreeNode, exc: Error) -> str:
+		selector = node.attributes.get('data-browser-use-camoufox-selector', '<unknown>')
+		ordinal = node.attributes.get('data-browser-use-camoufox-ordinal', '<unknown>')
+		text = (node.node_value or node.attributes.get('aria-label') or node.attributes.get('title') or '').strip()
+		state = node.attributes.get('data-state')
+		details = [
+			f'Camoufox click failed after {CLICK_TIMEOUT_MS}ms',
+			f'node={node.node_id}',
+			f'selector={selector}',
+			f'ordinal={ordinal}',
+			f'tag={node.tag_name}',
+		]
+		if state:
+			details.append(f'data-state={state}')
+		if text:
+			details.append(f'text={text[:120]}')
+		details.append(f'playwright_error={str(exc).splitlines()[0]}')
+		return '; '.join(details)
+
+	def _should_type_keyboard_text(self, keys: str) -> bool:
+		if len(keys) <= 1:
+			return False
+		if '+' in keys:
+			return False
+		if keys in PLAYWRIGHT_SPECIAL_KEYS:
+			return False
+		return keys.isprintable()
+
 	def _frame_for_target(self, page: Page, frame_id: str, frame_url: str):
 		for frame_index, frame in enumerate(page.frames):
 			candidate_id = 'main' if frame == page.main_frame else f'frame-{frame_index}'
@@ -1153,17 +1256,24 @@ class CamoufoxSession(BrowserSession):
 					'[role="link"]', '[role="textbox"]', '[role="checkbox"]', '[role="radio"]',
 					'[role="listbox"]', '[role="option"]', '[role="menu"]', '[role="menuitem"]', '[tabindex]',
 				];
-				const selector = selectorList.join(',');
 				const attributeNames = [
 					'id', 'class', 'name', 'type', 'role', 'href', 'title', 'value', 'placeholder', 'alt',
 					'aria-label', 'aria-expanded', 'aria-checked', 'aria-selected', 'aria-disabled',
-					'disabled', 'readonly', 'required', 'contenteditable', 'tabindex', 'data-testid',
-					'data-test', 'data-value',
+					'disabled', 'readonly', 'required', 'contenteditable', 'tabindex',
 				];
+				const semanticTags = new Set([
+					'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'li', 'dt', 'dd', 'summary', 'figcaption',
+					'blockquote', 'caption', 'td', 'th',
+				]);
+				const semanticRoles = new Set([
+					'alert', 'article', 'cell', 'columnheader', 'gridcell', 'heading', 'note', 'rowheader',
+					'status', 'tabpanel',
+				]);
 				const ordinals = new Map();
 				const shadowHostSelector = '*';
 				const elementPayload = (element, shadowRootType = null) => {
 					const tagName = element.tagName.toLowerCase();
+					const isInteractive = selectorList.some((candidate) => element.matches(candidate));
 					const matchedSelector = selectorList.find((candidate) => element.matches(candidate)) || tagName;
 					let stableSelector = matchedSelector;
 					if (element.id) {
@@ -1184,28 +1294,56 @@ class CamoufoxSession(BrowserSession):
 					for (const name of attributeNames) {
 						if (element.hasAttribute(name)) attributes[name] = element.getAttribute(name) || '';
 					}
+					for (const attr of Array.from(element.attributes)) {
+						if (
+							attr.name.startsWith('data-')
+							&& attr.name.length <= 40
+							&& attr.value.length <= 120
+							&& Object.keys(attributes).filter((name) => name.startsWith('data-')).length < 8
+						) {
+							attributes[attr.name] = attr.value;
+						}
+					}
 					const disabled = element.disabled === true || element.getAttribute('aria-disabled') === 'true';
 					const visible = rect.width > 0 && rect.height > 0
 						&& style.visibility !== 'hidden' && style.display !== 'none';
-					const text = (element.innerText || element.value || element.getAttribute('aria-label') || '')
-						.trim().slice(0, 200);
+					const text = (
+						element.textContent || element.innerText || element.value
+						|| element.getAttribute('aria-label') || ''
+					)
+						.replace(/\\s+/g, ' ').trim().slice(0, 200);
+					const role = element.getAttribute('role') || '';
+					const hasObservableState = Object.keys(attributes).some((name) => (
+						name.startsWith('aria-') || name.startsWith('data-')
+					));
+					const isObservable = isInteractive || (
+						text
+						&& (
+							semanticTags.has(tagName)
+							|| semanticRoles.has(role)
+							|| hasObservableState
+							|| element.getAttribute('aria-label')
+						)
+					);
 					return {
 						tagName: element.nodeName,
 						text,
 						attributes, selector: stableSelector, ordinal, is_visible: visible, is_disabled: disabled,
+						is_interactive: isInteractive, is_observable: isObservable,
 						frame_id: args.frameId, frame_url: args.frameUrl,
 						shadow_root_type: shadowRootType,
 						rect: {x: rect.x, y: rect.y, width: rect.width, height: rect.height},
 					};
 				};
-				const elements = Array.from(document.querySelectorAll(selector))
+				const domRoot = document.body || document;
+				const elements = Array.from(domRoot.querySelectorAll('*'))
 					.map((element) => elementPayload(element))
-					.filter((element) => element.is_visible);
+					.filter((element) => element.is_visible && element.is_observable);
 				for (const host of Array.from(document.querySelectorAll(shadowHostSelector))) {
 					if (host.shadowRoot) {
-						const shadowElements = Array.from(host.shadowRoot.querySelectorAll(selector))
+						const shadowElements = Array.from(host.shadowRoot.querySelectorAll('*'))
 							.map((element) => elementPayload(element, 'open'))
-							.filter((element) => element.is_visible);
+							.filter((element) => element.is_visible && element.is_observable);
 						elements.push(...shadowElements);
 					} else if (host.localName.includes('-')) {
 						const payload = elementPayload(host, 'closed');
@@ -1267,7 +1405,7 @@ class CamoufoxSession(BrowserSession):
 			children_nodes=None,
 			ax_node=None,
 			snapshot_node=EnhancedSnapshotNode(
-				is_clickable=True,
+				is_clickable=bool(payload.get('is_interactive', True)),
 				cursor_style=None,
 				bounds=bounds,
 				clientRects=bounds,
@@ -1281,4 +1419,6 @@ class CamoufoxSession(BrowserSession):
 	def _stringify_js_result(self, value: Any) -> str:
 		if isinstance(value, BaseModel):
 			return value.model_dump_json()
+		if isinstance(value, (dict, list)):
+			return json.dumps(value, ensure_ascii=False)
 		return str(value)

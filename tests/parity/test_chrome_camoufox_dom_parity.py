@@ -1,9 +1,17 @@
+import importlib.util
 from pathlib import Path
 
 import pytest
 from browser_use.browser.events import BrowserStateRequestEvent
 
 from browser_use_camoufox import CamoufoxSession
+
+REAL_WORLD_KIT_PATH = Path(__file__).resolve().parents[2] / 'scripts' / 'real_world_kit.py'
+REAL_WORLD_KIT_SPEC = importlib.util.spec_from_file_location('real_world_kit', REAL_WORLD_KIT_PATH)
+assert REAL_WORLD_KIT_SPEC is not None
+real_world_kit = importlib.util.module_from_spec(REAL_WORLD_KIT_SPEC)
+assert REAL_WORLD_KIT_SPEC.loader is not None
+REAL_WORLD_KIT_SPEC.loader.exec_module(real_world_kit)
 
 
 @pytest.mark.anyio
@@ -66,3 +74,50 @@ async def test_generic_dom_observation_contract_exposes_visible_semantics(tmp_pa
 		assert not any(node.attributes.get('id') == 'hidden' for node in state.dom_state.selector_map.values())
 	finally:
 		await session.stop()
+
+
+def test_parity_matrix_report_summarizes_runtime_fixture_observation_and_actions():
+	report = real_world_kit.build_parity_matrix_report(
+		[
+			{
+				'runtime': 'chrome',
+				'fixture': 'generic-dom-contract',
+				'visible_text': ['Dashboard summary', 'System ready'],
+				'attributes': {'data-token': 'super-secret-token', 'aria-selected': 'true'},
+				'actionable_count': 2,
+				'observable_only_count': 2,
+				'action_results': [{'action': 'click', 'passed': True, 'summary': 'opened'}],
+			},
+			{
+				'runtime': 'camoufox',
+				'fixture': 'generic-dom-contract',
+				'visible_text': ['Dashboard summary', 'System ready'],
+				'attributes': {'data-token': 'super-secret-token', 'aria-selected': 'true'},
+				'actionable_count': 2,
+				'observable_only_count': 2,
+				'action_results': [{'action': 'click', 'passed': True, 'summary': 'opened'}],
+			},
+		]
+	)
+
+	assert report['kind'] == 'chrome_camoufox_parity_matrix'
+	assert report['fixtures'][0]['fixture'] == 'generic-dom-contract'
+	assert report['fixtures'][0]['runtimes']['chrome']['visible_text_parity'] == 'baseline'
+	assert report['fixtures'][0]['runtimes']['camoufox']['visible_text_parity'] is True
+	assert report['fixtures'][0]['runtimes']['camoufox']['attribute_parity'] is True
+	assert report['fixtures'][0]['runtimes']['camoufox']['actionable_count'] == 2
+	assert report['fixtures'][0]['runtimes']['camoufox']['observable_only_count'] == 2
+	assert report['fixtures'][0]['runtimes']['camoufox']['action_result_summary'] == [
+		{'action': 'click', 'passed': True}
+	]
+	assert 'super-secret-token' not in report['json']
+
+
+def test_scrub_redacts_sensitive_keys_and_tokens(monkeypatch):
+	monkeypatch.setenv('CODEX_LB_API_KEY', 'api-secret')
+
+	assert real_world_kit.scrub({'api_key': 'api-secret', 'data-token': 'super-secret-token', 'ok': 'ready'}) == {
+		'api_key': '<redacted>',
+		'data-token': '<redacted>',
+		'ok': 'ready',
+	}

@@ -4,4 +4,5 @@
 - Added generic DOM parity coverage for visible semantic text, ARIA state, bounded `data-*`, observable-only nodes, hidden-node exclusion, and clickable separation.
 - Completed Task 4: preserved actionability boundaries by keeping observable-only nodes readable but not editable/clickable, while inputs and printable `send_keys` remain usable.
 - Completed Task 5: aligned Camoufox tool surfaces with generic observation; verified `find_elements` defaults expose standard ARIA/data state and normalized visible text, `evaluate` returns JSON for structured values, and search/screenshot/PDF behavior remains stable.
-- Verified `uv run pytest -q tests/integration/test_dom_selector_reliability.py tests/parity/test_search_extract_screenshot.py`, `uv run pytest -q`, `uv run ruff check src tests scripts`, `uv run ruff format --check src tests scripts`, `uv run pyright`, and `uv build` pass.
+- Completed Task 6: added JSON Chrome-vs-Camoufox parity matrix reporting helpers with visible text parity, attribute parity, actionable/observable counts, action result summaries, and sensitive-key redaction.
+- Verified `uv run pytest -q tests/parity`, `uv run pytest -q`, `uv run ruff check src tests scripts`, `uv run ruff format --check src tests scripts`, `uv run pyright`, and `uv build` pass.

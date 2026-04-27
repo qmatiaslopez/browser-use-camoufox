@@ -85,7 +85,7 @@ IMPORTANT: When a task is fully completed and its Verify command passes, you mus
     - `src/browser_use_camoufox/session.py`
     - `tests/parity/test_search_extract_screenshot.py`
 
-- [ ] Task 6: Add Chrome-vs-Camoufox parity matrix reporting
+- [x] Task 6: Add Chrome-vs-Camoufox parity matrix reporting
   - Acceptance:
     - [ ] Report includes runtime, fixture/page name, visible text parity, attribute parity, actionable count, observable-only count, and action result summary.
     - [ ] Report output is JSON and redacts sensitive values.

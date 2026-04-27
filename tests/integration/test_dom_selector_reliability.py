@@ -135,6 +135,53 @@ async def test_send_keys_rejects_ambiguous_key_strings(tmp_path: Path):
 
 
 @pytest.mark.anyio
+async def test_send_keys_prepares_generic_app_focus_and_records_active_element_diagnostics(tmp_path: Path):
+	fixture = tmp_path / 'keyboard-app-focus.html'
+	fixture.write_text(
+		"""
+		<html>
+			<body>
+				<div id="app-root" class="game-shell" role="application" aria-label="Puzzle board" tabindex="-1">
+					<canvas id="board" aria-label="Board canvas"></canvas>
+				</div>
+				<script>
+					document.addEventListener('keydown', (event) => {
+						document.body.dataset.lastKey = event.key;
+						document.body.dataset.activeTag = document.activeElement.tagName.toLowerCase();
+						document.body.dataset.activeRole = document.activeElement.getAttribute('role') || '';
+						document.body.dataset.activeId = document.activeElement.id || '';
+					});
+				</script>
+			</body>
+		</html>
+		"""
+	)
+	session = CamoufoxSession(headless=True)
+
+	try:
+		await session.start()
+		await session.navigate_to(fixture.as_uri())
+		page = await session.get_current_page()
+
+		await session.on_SendKeysEvent(SendKeysEvent(keys='ArrowRight'))
+
+		assert await page.locator('body').get_attribute('data-last-key') == 'ArrowRight'
+		assert await page.locator('body').get_attribute('data-active-tag') == 'div'
+		assert await page.locator('body').get_attribute('data-active-role') == 'application'
+		assert await page.locator('body').get_attribute('data-active-id') == 'app-root'
+		diagnostics = session.last_keyboard_diagnostics
+		assert diagnostics is not None
+		assert diagnostics['before']['tag'] == 'body'
+		assert diagnostics['after']['tag'] == 'div'
+		assert diagnostics['after']['role'] == 'application'
+		assert diagnostics['after']['id'] == 'app-root'
+		assert diagnostics['after']['class'] == 'game-shell'
+		assert diagnostics['after']['label_excerpt'] == 'Puzzle board'
+	finally:
+		await session.stop()
+
+
+@pytest.mark.anyio
 async def test_state_grid_cells_are_observable_with_state_and_labels(tmp_path: Path):
 	fixture = tmp_path / 'state-grid.html'
 	fixture.write_text(

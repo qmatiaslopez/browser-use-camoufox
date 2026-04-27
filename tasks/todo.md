@@ -147,13 +147,13 @@ IMPORTANT: When a task is fully completed and its verification commands pass, up
     - `tests/integration/test_dom_selector_reliability.py`
     - `tests/integration/test_basic_actions.py`
 
-- [ ] Task 9: Add generic focus preparation and active-element diagnostics
+- [x] Task 9: Add generic focus preparation and active-element diagnostics
   - Acceptance:
-    - [ ] Keyboard-only actions can focus a generic body/canvas/app-root target when no editable element is active.
-    - [ ] Diagnostics include active element tag, role, id/class summary, and text/label excerpt before and after.
-    - [ ] Focus preparation never uses domain-specific selectors.
+    - [x] Keyboard-only actions can focus a generic body/canvas/app-root target when no editable element is active.
+    - [x] Diagnostics include active element tag, role, id/class summary, and text/label excerpt before and after.
+    - [x] Focus preparation never uses domain-specific selectors.
   - Verify:
-    - [ ] `uv run pytest -q tests/integration/test_dom_selector_reliability.py`
+    - [x] `uv run pytest -q tests/integration/test_dom_selector_reliability.py`
   - Dependencies: Task 8
   - Files:
     - `src/browser_use_camoufox/session.py`

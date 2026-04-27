@@ -324,6 +324,7 @@ class CamoufoxSession(BrowserSession):
 		self._selector_targets: dict[int, dict[str, Any]] = {}
 		self._recording_rejected = False
 		object.__setattr__(self, '_last_click_diagnostics', None)
+		object.__setattr__(self, '_last_keyboard_diagnostics', None)
 		self._register_camoufox_event_handlers()
 
 	async def start(self) -> None:
@@ -501,15 +502,25 @@ class CamoufoxSession(BrowserSession):
 	async def on_SendKeysEvent(self, event: SendKeysEvent) -> None:
 		page = await self._ensure_page()
 		kind = self._classify_keyboard_input(event.keys)
+		before = await self._active_element_diagnostics(page)
+		if kind == 'press':
+			await self._prepare_keyboard_focus(page)
+		after_focus = await self._active_element_diagnostics(page)
 		if kind == 'text':
 			await page.keyboard.type(event.keys)
-			return
-		if kind == 'invalid':
+		elif kind == 'invalid':
 			raise RuntimeError(
 				f'Ambiguous keyboard input for Camoufox send_keys: {event.keys!r}. '
 				'Use printable text, a Playwright special key, or a complete key chord like "Control+A".'
 			)
-		await page.keyboard.press(event.keys)
+		else:
+			await page.keyboard.press(event.keys)
+		after = await self._active_element_diagnostics(page)
+		object.__setattr__(
+			self,
+			'_last_keyboard_diagnostics',
+			{'before': before, 'after_focus': after_focus, 'after': after},
+		)
 
 	async def on_GetDropdownOptionsEvent(self, event: GetDropdownOptionsEvent) -> dict[str, str]:
 		return await self.get_dropdown_options(event.node)
@@ -873,6 +884,11 @@ class CamoufoxSession(BrowserSession):
 	@property
 	def last_click_diagnostics(self) -> dict[str, Any] | None:
 		diagnostics = getattr(self, '_last_click_diagnostics', None)
+		return dict(diagnostics) if isinstance(diagnostics, dict) else None
+
+	@property
+	def last_keyboard_diagnostics(self) -> dict[str, Any] | None:
+		diagnostics = getattr(self, '_last_keyboard_diagnostics', None)
 		return dict(diagnostics) if isinstance(diagnostics, dict) else None
 
 	async def get_selector_map(self) -> dict[int, EnhancedDOMTreeNode]:
@@ -1525,6 +1541,52 @@ class CamoufoxSession(BrowserSession):
 		if len(keys) == 1 or any(character in keys for character in ('\n', '\r', '\t')) or keys.isprintable():
 			return 'text'
 		return 'invalid'
+
+	async def _prepare_keyboard_focus(self, page: Page) -> None:
+		selector = await page.evaluate(
+			"""() => {
+			const editableSelector = [
+				'input', 'textarea', 'select', '[contenteditable=""]', '[contenteditable="true"]', '[role="textbox"]'
+			].join(', ');
+			const active = document.activeElement;
+			if (active && active.matches(editableSelector)) return null;
+			const selectors = [
+				'[role=application]', '[role=main]', 'main', 'canvas', '#app', '#app-root', '[data-app-root]', 'body'
+			];
+			const target = selectors.map((selector) => document.querySelector(selector)).find(Boolean);
+			if (!target || target === document.body) return null;
+			if (!target.hasAttribute('tabindex') && target !== document.body) target.setAttribute('tabindex', '0');
+			if (target.id) return `#${CSS.escape(target.id)}`;
+			target.setAttribute('data-browser-use-camoufox-focus-target', 'true');
+			return '[data-browser-use-camoufox-focus-target="true"]';
+			}"""
+		)
+		if selector:
+			await page.locator(str(selector)).focus()
+
+	async def _active_element_diagnostics(self, page: Page) -> dict[str, str]:
+		return cast(
+			dict[str, str],
+			await page.evaluate(
+				"""() => {
+				const element = document.activeElement || document.body;
+				const clean = (value) => (value || '').replace(/\\s+/g, ' ').trim().slice(0, 120);
+				return {
+					tag: clean(element.tagName ? element.tagName.toLowerCase() : ''),
+					role: clean(element.getAttribute('role')),
+					id: clean(element.id),
+					class: clean(element.className && typeof element.className === 'string' ? element.className : ''),
+					text_excerpt: clean(element.innerText || element.textContent),
+					label_excerpt: clean(
+						element.getAttribute('aria-label')
+						|| element.getAttribute('title')
+						|| element.getAttribute('placeholder')
+						|| ''
+					),
+				};
+				}"""
+			),
+		)
 
 	def _frame_for_target(self, page: Page, frame_id: str, frame_url: str):
 		for frame_index, frame in enumerate(page.frames):

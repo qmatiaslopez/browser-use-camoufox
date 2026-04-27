@@ -8,6 +8,7 @@ from browser_use.browser.events import (
 	SendKeysEvent,
 	TypeTextEvent,
 )
+from browser_use.tools.views import ScrollAction
 
 from browser_use_camoufox import CamoufoxSession
 
@@ -104,6 +105,44 @@ async def test_camoufox_indexed_scroll_targets_nearest_scroll_container(tmp_path
 		assert await page.evaluate("document.querySelector('#right').scrollTop") == 120
 		assert await page.evaluate("document.querySelector('#left').scrollTop") == 0
 		assert await page.evaluate('window.scrollY') == 0
+	finally:
+		await session.stop()
+
+
+@pytest.mark.anyio
+async def test_camoufox_scroll_action_reports_noop_diagnostics(tmp_path: Path):
+	fixture = tmp_path / 'noop_scroll.html'
+	fixture.write_text(
+		"""
+		<html>
+			<body>
+				<button id="only">Only button</button>
+			</body>
+		</html>
+		"""
+	)
+
+	session = CamoufoxSession(headless=True)
+
+	try:
+		await session.start()
+		await session.navigate_to(fixture.as_uri())
+
+		state_event = session.event_bus.dispatch(BrowserStateRequestEvent(include_dom=True, include_screenshot=False))
+		await state_event
+		state = await state_event.event_result()
+		button = next(node for node in state.dom_state.selector_map.values() if node.attributes.get('id') == 'only')
+
+		result = await session.scroll_action(ScrollAction(down=True, num_pages=1, index=button.node_id))
+
+		assert result.metadata is not None
+		diagnostics = result.metadata['scroll_diagnostics']
+		assert diagnostics['target_index'] == button.node_id
+		assert diagnostics['blocker'] == 'already_at_boundary'
+		assert diagnostics['before']['x'] == 0
+		assert diagnostics['before']['max_y'] == 0
+		assert diagnostics['after']['y'] == 0
+		assert 'no-op' in result.extracted_content
 	finally:
 		await session.stop()
 

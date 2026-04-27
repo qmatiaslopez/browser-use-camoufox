@@ -113,13 +113,13 @@ IMPORTANT: When a task is fully completed and its verification commands pass, up
     - `tests/integration/test_basic_actions.py`
     - `tests/integration/test_interaction_events.py`
 
-- [ ] Task 7: Add continuation and no-op scroll diagnostics
+- [x] Task 7: Add continuation and no-op scroll diagnostics
   - Acceptance:
-    - [ ] Observation can indicate below/right continuation without exceeding output limits.
-    - [ ] No-op scroll diagnostics include current offsets, max offsets, target index, and likely blocker category.
-    - [ ] Repeated no-op behavior is covered by a deterministic local fixture.
+    - [x] Observation can indicate below/right continuation without exceeding output limits.
+    - [x] No-op scroll diagnostics include current offsets, max offsets, target index, and likely blocker category.
+    - [x] Repeated no-op behavior is covered by a deterministic local fixture.
   - Verify:
-    - [ ] `uv run pytest -q tests/integration/test_basic_actions.py tests/integration/test_dom_selector_reliability.py`
+    - [x] `uv run pytest -q tests/integration/test_basic_actions.py tests/integration/test_dom_selector_reliability.py`
   - Dependencies: Task 6
   - Files:
     - `src/browser_use_camoufox/session.py`

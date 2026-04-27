@@ -765,11 +765,20 @@ class CamoufoxSession(BrowserSession):
 		viewport_height = await page.evaluate('window.innerHeight || document.documentElement.clientHeight || 1000')
 		pixels = int(float(viewport_height or 1000) * params.pages)
 		direction = 'down' if params.down else 'up'
-		event = ScrollEvent(direction=direction, amount=abs(pixels), node=node)
-		await self.on_ScrollEvent(event)
+		x_delta = 0
+		y_delta = abs(pixels) if params.down else -abs(pixels)
+		diagnostics = (
+			await self._scroll_nearest_container(node, x_delta, y_delta)
+			if node is not None
+			else await self._scroll_page_with_diagnostics(x_delta, y_delta)
+		)
 		target = f' element {params.index}' if params.index not in (None, 0) else ''
 		memory = f'Scrolled {direction}{target} {abs(pixels)}px'
-		return ActionResult(extracted_content=memory, long_term_memory=memory)
+		if diagnostics['blocker'] != 'moved':
+			memory = f'{memory} (no-op: {diagnostics["blocker"]})'
+		return ActionResult(
+			extracted_content=memory, long_term_memory=memory, metadata={'scroll_diagnostics': diagnostics}
+		)
 
 	async def save_as_pdf_action(self, params: SaveAsPdfAction, file_system) -> ActionResult:
 		page = await self._ensure_page()
@@ -1051,10 +1060,35 @@ class CamoufoxSession(BrowserSession):
 		target = str(target_id)
 		return target in {str(index), f'{index:04d}', self._tab_target_id(index)}
 
-	async def _scroll_nearest_container(self, node: EnhancedDOMTreeNode, x_delta: int, y_delta: int) -> None:
+	async def _scroll_nearest_container(self, node: EnhancedDOMTreeNode, x_delta: int, y_delta: int) -> dict[str, Any]:
 		locator = self._locator_for_node(node)
-		await locator.evaluate(
-			"""(element, delta) => {
+		return cast(
+			dict[str, Any],
+			await locator.evaluate(
+				"""(element, delta) => {
+				const metrics = (target) => {
+					const isWindow = target === window;
+					const width = isWindow ? document.documentElement.scrollWidth : target.scrollWidth;
+					const height = isWindow ? document.documentElement.scrollHeight : target.scrollHeight;
+					const clientWidth = isWindow ? window.innerWidth : target.clientWidth;
+					const clientHeight = isWindow ? window.innerHeight : target.clientHeight;
+					return {
+						x: Math.round(isWindow ? window.scrollX : target.scrollLeft),
+						y: Math.round(isWindow ? window.scrollY : target.scrollTop),
+						max_x: Math.max(0, Math.round(width - clientWidth)),
+						max_y: Math.max(0, Math.round(height - clientHeight)),
+					};
+				};
+				const isBlockedByBoundary = (before) => (
+					(delta.y > 0 && before.y >= before.max_y)
+					|| (delta.y < 0 && before.y <= 0)
+					|| (delta.x > 0 && before.x >= before.max_x)
+					|| (delta.x < 0 && before.x <= 0)
+				);
+				const blocker = (before, after) => {
+					if (before.x !== after.x || before.y !== after.y) return 'moved';
+					return isBlockedByBoundary(before) ? 'already_at_boundary' : 'not_scrollable';
+				};
 				const canScroll = (candidate) => {
 					if (!candidate) return false;
 					const style = window.getComputedStyle(candidate);
@@ -1077,13 +1111,52 @@ class CamoufoxSession(BrowserSession):
 				while (container && container !== document.body && !canScroll(container)) {
 					container = container.parentElement;
 				}
-				if (container && canScroll(container)) {
-					container.scrollBy({left: delta.x, top: delta.y});
-					return;
-				}
-				window.scrollBy(delta.x, delta.y);
+				const target = container && canScroll(container) ? container : window;
+				const before = metrics(target);
+				if (target === window) window.scrollBy(delta.x, delta.y);
+				else target.scrollBy({left: delta.x, top: delta.y});
+				const after = metrics(target);
+				return {
+					before,
+					after,
+					target_index: delta.targetIndex,
+					target_type: target === window ? 'page' : 'container',
+					blocker: blocker(before, after),
+				};
 			}""",
-			{'x': x_delta, 'y': y_delta},
+				{'x': x_delta, 'y': y_delta, 'targetIndex': node.node_id},
+			),
+		)
+
+	async def _scroll_page_with_diagnostics(self, x_delta: int, y_delta: int) -> dict[str, Any]:
+		page = await self._ensure_page()
+		return cast(
+			dict[str, Any],
+			await page.evaluate(
+				"""(delta) => {
+				const metrics = () => ({
+					x: Math.round(window.scrollX),
+					y: Math.round(window.scrollY),
+					max_x: Math.max(0, Math.round(document.documentElement.scrollWidth - window.innerWidth)),
+					max_y: Math.max(0, Math.round(document.documentElement.scrollHeight - window.innerHeight)),
+				});
+				const before = metrics();
+				window.scrollBy(delta.x, delta.y);
+				const after = metrics();
+				let blocker = 'moved';
+				if (before.x === after.x && before.y === after.y) {
+					const atBoundary = (
+						(delta.y > 0 && before.y >= before.max_y)
+						|| (delta.y < 0 && before.y <= 0)
+						|| (delta.x > 0 && before.x >= before.max_x)
+						|| (delta.x < 0 && before.x <= 0)
+					);
+					blocker = atBoundary ? 'already_at_boundary' : 'not_scrollable';
+				}
+				return {before, after, target_index: null, target_type: 'page', blocker};
+			}""",
+				{'x': x_delta, 'y': y_delta},
+			),
 		)
 
 	async def _ensure_page(self, *, new_tab: bool = False) -> Page:

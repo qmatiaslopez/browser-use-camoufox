@@ -12,3 +12,5 @@
 - Added click diagnostic regression coverage with sensitive attribute omission; focused Task 5 validators, pyright, and package build pass.
 - Completed Task 6: indexed scroll events now target the nearest scrollable ancestor and fall back to page scrolling when no meaningful container is available, preserving unindexed page scroll behavior.
 - Added nested scroll regression coverage; focused Task 6 validators, full pytest, ruff, pyright, and package build pass.
+- Completed Task 7: scroll actions now return bounded diagnostics with before/after offsets, max offsets, target index/type, and no-op blocker classification while preserving event scroll behavior.
+- Added deterministic no-op scroll regression coverage; focused Task 7 validators, full pytest, ruff, pyright, and package build pass.

@@ -256,3 +256,106 @@ async def test_click_recovers_with_associated_form_submit_when_activation_does_n
 		assert diagnostics['fallback']['result'] == 'form_submit_succeeded'
 	finally:
 		await session.stop()
+
+
+@pytest.mark.anyio
+async def test_click_recovers_visible_autocomplete_option_after_no_change(tmp_path: Path):
+	fixture = tmp_path / 'generic_autocomplete.html'
+	fixture.write_text(
+		"""
+		<html>
+			<head><title>Generic autocomplete</title></head>
+			<body>
+				<label for="destination">Destination</label>
+				<input id="destination" role="combobox" aria-controls="suggestions" value="nor" />
+				<ul id="suggestions" role="listbox">
+					<li role="option" data-value="north">North Station</li>
+					<li role="option" data-value="south">South Station</li>
+				</ul>
+				<p id="result">Waiting</p>
+				<script>
+					document.querySelectorAll('[role=option]').forEach((option) => {
+						option.addEventListener('click', (event) => {
+							if (option.dataset.value === 'north') {
+								event.preventDefault();
+								return;
+							}
+							document.querySelector('#result').textContent = `Selected ${option.textContent.trim()}`;
+						});
+					});
+					document.querySelector('#destination').addEventListener('keydown', (event) => {
+						if (event.key !== 'Enter') return;
+						const options = Array.from(document.querySelectorAll('[role=option]'));
+						const match = options.find((option) => option.dataset.value === 'north');
+						document.querySelector('#result').textContent = `Selected ${match.textContent.trim()}`;
+					});
+				</script>
+			</body>
+		</html>
+		"""
+	)
+	session = CamoufoxSession(headless=True)
+
+	try:
+		await session.start()
+		await session.navigate_to(fixture.as_uri())
+		state_event = session.event_bus.dispatch(BrowserStateRequestEvent(include_dom=True, include_screenshot=False))
+		await state_event
+		state = await state_event.event_result()
+		option = next(
+			node
+			for node in state.dom_state.selector_map.values()
+			if node.attributes.get('role') == 'option' and node.attributes.get('data-value') == 'north'
+		)
+
+		await session.on_ClickElementEvent(ClickElementEvent(node=option))
+
+		page = await session.get_current_page()
+		assert await page.locator('#result').text_content() == 'Selected North Station'
+		diagnostics = session.last_click_diagnostics
+		assert diagnostics is not None
+		assert diagnostics['fallback']['attempted'] == ['click', 'autocomplete_option']
+		assert diagnostics['fallback']['result'] == 'autocomplete_option_succeeded'
+	finally:
+		await session.stop()
+
+
+@pytest.mark.anyio
+async def test_click_rejects_ambiguous_autocomplete_option_recovery(tmp_path: Path):
+	fixture = tmp_path / 'generic_ambiguous_autocomplete.html'
+	fixture.write_text(
+		"""
+		<html>
+			<body>
+				<input id="destination" role="combobox" aria-controls="suggestions" value="central" />
+				<ul id="suggestions" role="listbox">
+					<li role="option" data-value="central">Central Station</li>
+					<li role="option" data-value="central">Central Station</li>
+				</ul>
+				<p id="result">Waiting</p>
+				<script>
+					document.querySelectorAll('[role=option]').forEach((option) => {
+						option.addEventListener('click', (event) => event.preventDefault());
+					});
+				</script>
+			</body>
+		</html>
+		"""
+	)
+	session = CamoufoxSession(headless=True)
+
+	try:
+		await session.start()
+		await session.navigate_to(fixture.as_uri())
+		state_event = session.event_bus.dispatch(BrowserStateRequestEvent(include_dom=True, include_screenshot=False))
+		await state_event
+		state = await state_event.event_result()
+		option = next(node for node in state.dom_state.selector_map.values() if node.attributes.get('role') == 'option')
+
+		with pytest.raises(RuntimeError, match='candidate_ranking'):
+			await session.on_ClickElementEvent(ClickElementEvent(node=option))
+
+		page = await session.get_current_page()
+		assert await page.locator('#result').text_content() == 'Waiting'
+	finally:
+		await session.stop()

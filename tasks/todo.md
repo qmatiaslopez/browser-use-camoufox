@@ -108,13 +108,13 @@ IMPORTANT: When a task is fully completed and its verification commands pass, up
 
 ## Phase 4: Autocomplete and Dynamic Frame Recovery
 
-- [ ] Task 7: Add generic autocomplete/listbox option selection recovery
+- [x] Task 7: Add generic autocomplete/listbox option selection recovery
   - Acceptance:
-    - [ ] Generic autocomplete fixture selects the intended visible option.
-    - [ ] Ambiguous suggestions are rejected with ranked diagnostics.
-    - [ ] Works for ARIA listbox/menu/option patterns without site-specific selectors.
+    - [x] Generic autocomplete fixture selects the intended visible option.
+    - [x] Ambiguous suggestions are rejected with ranked diagnostics.
+    - [x] Works for ARIA listbox/menu/option patterns without site-specific selectors.
   - Verify:
-    - [ ] `uv run pytest -q tests/integration/test_interaction_events.py tests/parity/test_forms_dropdown_upload.py`
+    - [x] `uv run pytest -q tests/integration/test_interaction_events.py tests/parity/test_forms_dropdown_upload.py`
   - Dependencies: Task 6
   - Files:
     - `src/browser_use_camoufox/session.py`

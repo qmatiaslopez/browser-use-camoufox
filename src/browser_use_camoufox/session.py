@@ -472,6 +472,16 @@ class CamoufoxSession(BrowserSession):
 			fallback_attempted == ['click']
 			and event.button == 'left'
 			and not self._click_page_changed(diagnostics)
+			and await self._can_select_autocomplete_option(node)
+		):
+			fallback_attempted.append('autocomplete_option')
+			await self._select_autocomplete_option(node)
+			after = await self._capture_click_state(node)
+			diagnostics = self._click_change_diagnostics(before, after)
+		if (
+			fallback_attempted == ['click']
+			and event.button == 'left'
+			and not self._click_page_changed(diagnostics)
 			and self._can_keyboard_activate(node)
 		):
 			fallback_attempted.append('keyboard_activation')
@@ -1685,6 +1695,58 @@ class CamoufoxSession(BrowserSession):
 				else form.dispatchEvent(new Event('submit', {bubbles: true, cancelable: true}));
 			}"""
 		)
+
+	async def _can_select_autocomplete_option(self, node: EnhancedDOMTreeNode) -> bool:
+		if node.attributes.get('data-browser-use-camoufox-disabled') == 'true':
+			return False
+		if node.attributes.get(OBSERVABLE_ELEMENT_ATTRIBUTE) == 'true':
+			return False
+		if (node.attributes.get('role') or '').lower() not in {'option', 'menuitem'}:
+			return False
+		return bool(
+			await self._locator_for_node(node).evaluate(
+				"""element => {
+					const visible = (candidate) => {
+						if (!candidate) return false;
+						const style = window.getComputedStyle(candidate);
+						const rect = candidate.getBoundingClientRect();
+						return style.visibility !== 'hidden'
+							&& style.display !== 'none'
+							&& rect.width > 0
+							&& rect.height > 0;
+					};
+					if (!visible(element)) return false;
+					const owner = element.closest('[role="listbox"], [role="menu"]');
+					if (!owner) return false;
+					const options = Array.from(owner.querySelectorAll('[role="option"], [role="menuitem"]'))
+						.filter((candidate) => (
+							visible(candidate) && candidate.getAttribute('aria-disabled') !== 'true'
+						));
+					const evidence = (candidate) => [
+						candidate.getAttribute('data-value') || '',
+						candidate.getAttribute('aria-label') || '',
+						(candidate.innerText || candidate.textContent || '').replace(/\\s+/g, ' ').trim(),
+					].filter(Boolean).join('|');
+					return options.filter((candidate) => evidence(candidate) === evidence(element)).length === 1;
+				}"""
+			)
+		)
+
+	async def _select_autocomplete_option(self, node: EnhancedDOMTreeNode) -> None:
+		await self._locator_for_node(node).evaluate(
+			"""element => {
+				const owner = element.closest('[role="listbox"], [role="menu"]');
+				const ownerId = owner ? owner.id : '';
+				const controlsSelector = ownerId ? `[aria-controls="${CSS.escape(ownerId)}"]` : '';
+				const input = controlsSelector ? document.querySelector(controlsSelector) : null;
+				const target = input || document.activeElement;
+				if (!target || typeof target.focus !== 'function') throw new Error('No autocomplete input found');
+				element.setAttribute('aria-selected', 'true');
+				target.focus();
+			}"""
+		)
+		page = await self._ensure_page()
+		await page.keyboard.press('Enter')
 
 	async def _capture_click_state(self, node: EnhancedDOMTreeNode) -> dict[str, Any]:
 		page = await self._ensure_page()

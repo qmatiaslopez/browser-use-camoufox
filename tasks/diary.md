@@ -61,3 +61,12 @@
   - `uv run pyright`
   - `uv run pytest -q`
   - `uv build`
+- Completed Task 7: click recovery now handles clear visible ARIA autocomplete/listbox options by focusing the associated combobox and pressing Enter when the direct click causes no state change.
+- Ambiguous repeated options remain blocked by ranked relocalization diagnostics, and the implementation stays generic with no public-site selectors or CDP usage.
+- Task 7 validators pass:
+  - `uv run pytest -q tests/integration/test_interaction_events.py tests/parity/test_forms_dropdown_upload.py`
+  - `uv run ruff check src tests scripts`
+  - `uv run ruff format --check src tests scripts`
+  - `uv run pyright`
+  - `uv run pytest -q`
+  - `uv build`

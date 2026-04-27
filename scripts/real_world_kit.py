@@ -2,6 +2,7 @@ import argparse
 import asyncio
 import json
 import os
+import re
 import time
 import traceback
 from dataclasses import asdict, dataclass
@@ -20,7 +21,6 @@ from browser_use_camoufox import CamoufoxSession, register_camoufox_tools
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_BASE_URL = 'http://localhost:2455/v1'
 DEFAULT_MODEL = 'gpt-5.4'
-SAUCE_DEMO_PASSWORD = 'secret_sauce'
 DEFAULT_CHROME_EXECUTABLE = Path.home() / '.cache/ms-playwright/chromium-1217/chrome-linux64/chrome'
 CHROME_TEST_ARGS = [
 	'--password-store=basic',
@@ -59,6 +59,15 @@ class Mission:
 	success_criteria: str
 	max_steps: int
 	timeout_seconds: int
+	family: str = ''
+	variation: int = 0
+	complexity: str = ''
+	verifier: str = 'generic_visible'
+	domains: tuple[str, ...] = ()
+	visible_terms: tuple[str, ...] = ()
+	final_terms: tuple[str, ...] = ()
+	history_terms: tuple[str, ...] = ()
+	requires_price: bool = False
 
 
 @dataclass
@@ -69,58 +78,298 @@ class Verification:
 
 
 MISSIONS = {
-	'wordle': Mission(
-		id='wordle',
-		name='Wordle daily solve',
+	'wiki_basic_lookup': Mission(
+		id='wiki_basic_lookup',
+		name='Wikipedia basic lookup',
+		url='https://www.wikipedia.org/',
+		task=(
+			'Use Wikipedia search to open the article about Playwright, the software testing framework. '
+			'Return the visible article title and one visible fact from the article. Finish with success=True only '
+			'when the browser is on the Playwright Wikipedia article.'
+		),
+		success_criteria='The final page is a Wikipedia Playwright article and the final answer mentions Playwright.',
+		max_steps=8,
+		timeout_seconds=420,
+		family='Knowledge navigation',
+		variation=1,
+		complexity='Simple',
+		domains=('wikipedia.org',),
+		visible_terms=('playwright',),
+		final_terms=('playwright',),
+	),
+	'wiki_disambiguation_followup': Mission(
+		id='wiki_disambiguation_followup',
+		name='Wikipedia disambiguation follow-up',
+		url='https://www.wikipedia.org/',
+		task=(
+			'Use Wikipedia to find the article for Playwright, the software testing framework, even if search or '
+			'disambiguation results appear. Open the correct article and return two visible facts plus the final URL. '
+			'Finish with success=True only after the correct article is visible.'
+		),
+		success_criteria='The final page is the Playwright software Wikipedia article with two visible facts reported.',
+		max_steps=10,
+		timeout_seconds=480,
+		family='Knowledge navigation',
+		variation=2,
+		complexity='Medium',
+		domains=('wikipedia.org',),
+		visible_terms=('playwright',),
+		final_terms=('playwright',),
+	),
+	'wiki_compare_articles': Mission(
+		id='wiki_compare_articles',
+		name='Wikipedia article comparison',
+		url='https://www.wikipedia.org/',
+		task=(
+			'Use Wikipedia to inspect the Playwright software article and the Selenium software article. Compare them '
+			'using only visible article content. Return two differences and include evidence that both article pages '
+			'were visited. Finish with success=True only if both technologies are covered in the final answer.'
+		),
+		success_criteria='The final answer compares Playwright and Selenium using visible Wikipedia article content.',
+		max_steps=14,
+		timeout_seconds=600,
+		family='Knowledge navigation',
+		variation=3,
+		complexity='Complex',
+		domains=('wikipedia.org',),
+		final_terms=('playwright', 'selenium'),
+	),
+	'github_repo_overview': Mission(
+		id='github_repo_overview',
+		name='GitHub repo overview',
+		url='https://github.com/microsoft/playwright',
+		task=(
+			'Open the public GitHub repository microsoft/playwright. Extract the visible repository name, description, '
+			'and one visible metadata item such as stars, forks, license, or latest release. Finish with success=True '
+			'only while still on a GitHub page for microsoft/playwright.'
+		),
+		success_criteria=(
+			'The final browser state is the microsoft/playwright GitHub repo and the answer summarizes it.'
+		),
+		max_steps=8,
+		timeout_seconds=420,
+		family='Public code/repo research',
+		variation=1,
+		complexity='Simple',
+		domains=('github.com',),
+		visible_terms=('playwright',),
+		final_terms=('playwright',),
+	),
+	'github_docs_navigation': Mission(
+		id='github_docs_navigation',
+		name='GitHub docs navigation',
+		url='https://github.com/microsoft/playwright',
+		task=(
+			'Use the GitHub UI for microsoft/playwright to find visible getting-started, docs, or installation '
+			'content. '
+			'Return one visible install/get-started command or documentation link text and where you found it. '
+			'Finish with success=True only after visible repo documentation evidence is found.'
+		),
+		success_criteria='The final answer includes visible Playwright documentation or install evidence from GitHub.',
+		max_steps=12,
+		timeout_seconds=540,
+		family='Public code/repo research',
+		variation=2,
+		complexity='Medium',
+		domains=('github.com',),
+		visible_terms=('playwright',),
+		final_terms=('playwright',),
+	),
+	'github_issue_or_code_search': Mission(
+		id='github_issue_or_code_search',
+		name='GitHub issue or code search',
+		url='https://github.com/microsoft/playwright',
+		task=(
+			'Use GitHub UI navigation or search within microsoft/playwright to find a visible issue, pull request, or '
+			'code result related to trace viewer. Return the visible title/path, status if present, and one evidence '
+			'line. Finish with success=True only when the final answer includes trace viewer evidence from GitHub.'
+		),
+		success_criteria='The final answer includes visible GitHub evidence related to Playwright trace viewer.',
+		max_steps=16,
+		timeout_seconds=720,
+		family='Public code/repo research',
+		variation=3,
+		complexity='Complex',
+		domains=('github.com',),
+		final_terms=('trace', 'playwright'),
+	),
+	'mdn_fetch_lookup': Mission(
+		id='mdn_fetch_lookup',
+		name='MDN Fetch API lookup',
+		url='https://developer.mozilla.org/',
+		task=(
+			'Use MDN Web Docs to find the Fetch API documentation. Return a concise visible syntax or usage fact. '
+			'Finish with success=True only when the browser is on an MDN page about Fetch API.'
+		),
+		success_criteria='The final page is an MDN Fetch API page and the answer includes a visible Fetch API fact.',
+		max_steps=8,
+		timeout_seconds=420,
+		family='Documentation lookup',
+		variation=1,
+		complexity='Simple',
+		domains=('developer.mozilla.org',),
+		visible_terms=('fetch',),
+		final_terms=('fetch',),
+	),
+	'mdn_related_api_flow': Mission(
+		id='mdn_related_api_flow',
+		name='MDN related API flow',
+		url='https://developer.mozilla.org/',
+		task=(
+			'Use MDN Web Docs to inspect Fetch API and AbortController documentation. Explain how AbortController '
+			'relates to fetch requests using only visible docs. Finish with success=True only if both Fetch and '
+			'AbortController are covered in the final answer.'
+		),
+		success_criteria='The final answer explains the visible MDN relationship between Fetch and AbortController.',
+		max_steps=12,
+		timeout_seconds=540,
+		family='Documentation lookup',
+		variation=2,
+		complexity='Medium',
+		domains=('developer.mozilla.org',),
+		final_terms=('fetch', 'abortcontroller'),
+	),
+	'mdn_compatibility_research': Mission(
+		id='mdn_compatibility_research',
+		name='MDN compatibility research',
+		url='https://developer.mozilla.org/',
+		task=(
+			'Use MDN Web Docs to find visible browser compatibility information for AbortController. Summarize support '
+			'evidence for at least two browsers or a baseline/support statement. Finish with success=True only if the '
+			'answer contains visible compatibility evidence.'
+		),
+		success_criteria='The final answer summarizes visible MDN compatibility evidence for AbortController.',
+		max_steps=14,
+		timeout_seconds=660,
+		family='Documentation lookup',
+		variation=3,
+		complexity='Complex',
+		domains=('developer.mozilla.org',),
+		final_terms=('abortcontroller',),
+	),
+	'imdb_title_lookup': Mission(
+		id='imdb_title_lookup',
+		name='IMDb title lookup',
+		url='https://www.imdb.com/',
+		task=(
+			'Use IMDb to search for the movie Inception. Open the title page and extract the visible title, year, and '
+			'one visible rating or cast fact. Finish with success=True only on an IMDb page for Inception.'
+		),
+		success_criteria='The final browser state is an IMDb page for Inception and the answer includes visible facts.',
+		max_steps=10,
+		timeout_seconds=540,
+		family='Real public search/filter flows',
+		variation=1,
+		complexity='Simple',
+		domains=('imdb.com',),
+		visible_terms=('inception',),
+		final_terms=('inception',),
+	),
+	'ebay_product_filter': Mission(
+		id='ebay_product_filter',
+		name='eBay product filter',
+		url='https://www.ebay.com/',
+		task=(
+			'Use eBay to search for wireless mouse. Apply one visible sort or filter such as Buy It Now, condition, or '
+			'price sorting if available. Extract the first relevant visible listing title and price. Do not sign in or '
+			'buy anything. Finish with success=True only when listing evidence is visible.'
+		),
+		success_criteria='The final answer includes a visible eBay listing title and price for wireless mouse.',
+		max_steps=14,
+		timeout_seconds=660,
+		family='Real public search/filter flows',
+		variation=2,
+		complexity='Medium',
+		domains=('ebay.',),
+		final_terms=('mouse',),
+		requires_price=True,
+	),
+	'booking_destination_search': Mission(
+		id='booking_destination_search',
+		name='Booking destination search',
+		url='https://www.booking.com/',
+		task=(
+			'Use Booking.com to search for Montevideo, Uruguay for a future one-night stay for two adults. Handle only '
+			'visible dialogs or filters. Extract one visible accommodation result with price or availability evidence. '
+			'Do not sign in or reserve anything. Finish with success=True only when visible result evidence is found.'
+		),
+		success_criteria=(
+			'The final answer includes one visible Booking.com Montevideo result with price or availability evidence.'
+		),
+		max_steps=18,
+		timeout_seconds=840,
+		family='Real public search/filter flows',
+		variation=3,
+		complexity='Complex',
+		domains=('booking.com',),
+		final_terms=('montevideo',),
+	),
+	'wordle_board_ready': Mission(
+		id='wordle_board_ready',
+		name='Wordle board ready',
 		url='https://www.nytimes.com/games/wordle/index.html',
 		task=(
-			'Open Wordle and solve the daily puzzle only by playing guesses on the visible board. '
-			'Close any welcome or help modal if needed. Start with a valid five-letter English word, submit it, '
-			'read the visible tile feedback, and choose the next guess from that feedback. Do not visit any other '
-			'website, do not inspect source code, do not use NYT JSON endpoints, and do not use any known answer list. '
-			'Finish with success=True only when a row is visibly all correct/green. If you cannot solve it in six '
-			'guesses, finish with success=False and summarize every guess and the blocker.'
+			'Open Wordle. Close only visible welcome, help, subscription, or cookie dialogs if needed. Verify that the '
+			'game board and on-screen keyboard are visible. Do not make a guess. Finish with success=True only when '
+			'the visible board and keyboard are ready.'
+		),
+		success_criteria='The visible Wordle board and keyboard are present.',
+		max_steps=8,
+		timeout_seconds=420,
+		family='Dynamic keyboard app',
+		variation=1,
+		complexity='Simple',
+		verifier='wordle_board',
+		domains=('nytimes.com',),
+	),
+	'wordle_one_guess_feedback': Mission(
+		id='wordle_one_guess_feedback',
+		name='Wordle one guess feedback',
+		url='https://www.nytimes.com/games/wordle/index.html',
+		task=(
+			'Open Wordle, close visible dialogs if needed, submit exactly one valid starter guess using the visible '
+			'board/keyboard, and report the visible tile feedback. Do not use hidden state, answer lists, or NYT JSON '
+			'endpoints. Finish with success=True only after one complete submitted row has visible feedback.'
+		),
+		success_criteria='One Wordle row has five submitted letters with visible feedback states.',
+		max_steps=10,
+		timeout_seconds=540,
+		family='Dynamic keyboard app',
+		variation=2,
+		complexity='Medium',
+		verifier='wordle_feedback',
+		domains=('nytimes.com',),
+	),
+	'wordle_solve_visible_feedback': Mission(
+		id='wordle_solve_visible_feedback',
+		name='Wordle daily solve from visible feedback',
+		url='https://www.nytimes.com/games/wordle/index.html',
+		task=(
+			'Open Wordle and solve the daily puzzle only by playing guesses on the visible board. Close visible '
+			'welcome or help modal if needed. Start with a valid five-letter English word, submit it, read the visible '
+			'tile feedback, and choose the next guess from that feedback. Do not visit any other website, inspect '
+			'source code, use NYT JSON endpoints, or use any known answer list. Finish with success=True only when a '
+			'row is visibly all correct/green. If you cannot solve it in six guesses, finish with success=False and '
+			'summarize every guess and the blocker.'
 		),
 		success_criteria='A submitted Wordle row is complete and every tile in that row is correct/green.',
 		max_steps=18,
 		timeout_seconds=900,
-	),
-	'saucedemo': Mission(
-		id='saucedemo',
-		name='SauceDemo checkout flow',
-		url='https://www.saucedemo.com/',
-		task=(
-			'Complete a demo checkout on SauceDemo. Log in with username standard_user and password secret_sauce. '
-			'Sort products by price low to high, open the cheapest product details, add it to the cart, go to the '
-			'cart, start checkout, fill first name Ada, last name Lovelace, postal code 11200, continue, and finish '
-			'the order. Finish with success=True only when the page visibly says Thank you for your order.'
-		),
-		success_criteria='The final page visibly contains "Thank you for your order!" after completing checkout.',
-		max_steps=16,
-		timeout_seconds=600,
-	),
-	'wikipedia': Mission(
-		id='wikipedia',
-		name='Wikipedia research task',
-		url='https://www.wikipedia.org/',
-		task=(
-			'Use Wikipedia to research Playwright, the software testing framework. Search Wikipedia, open the relevant '
-			'article, and produce a concise final answer with the article title, a one-sentence summary, and two '
-			'verifiable facts from the page. Finish with success=True only after you are on the relevant Wikipedia '
-			'article and your final answer includes those three pieces of information.'
-		),
-		success_criteria=(
-			'The browser ends on the relevant Wikipedia article and the final answer summarizes Playwright.'
-		),
-		max_steps=10,
-		timeout_seconds=420,
+		family='Dynamic keyboard app',
+		variation=3,
+		complexity='Very complex',
+		verifier='wordle_solved',
+		domains=('nytimes.com',),
 	),
 }
+
+DEFAULT_MISSION_IDS = tuple(MISSIONS)
 
 
 def parse_args() -> argparse.Namespace:
 	parser = argparse.ArgumentParser(description='Run headed real-world browser-use-camoufox missions.')
 	parser.add_argument('--mission', choices=sorted(MISSIONS), action='append', help='Mission id to run; repeatable.')
+	parser.add_argument('--list-missions', action='store_true', help='List benchmark mission ids and exit.')
 	parser.add_argument('--base-url', default=os.getenv('CODEX_LB_BASE_URL', DEFAULT_BASE_URL))
 	parser.add_argument('--model', default=DEFAULT_MODEL)
 	parser.add_argument('--runtime', choices=['camoufox', 'chrome'], default='camoufox')
@@ -153,7 +402,7 @@ def build_tools(*, runtime: str) -> Tools:
 	return tools
 
 
-async def verify_wordle(session: CamoufoxSession | BrowserSession) -> Verification:
+async def get_wordle_rows(session: CamoufoxSession | BrowserSession) -> tuple[str, list[list[dict[str, Any]]]]:
 	page = await get_current_page(session)
 	raw_tiles = await evaluate_page(
 		page,
@@ -165,6 +414,47 @@ async def verify_wordle(session: CamoufoxSession | BrowserSession) -> Verificati
 	)
 	tiles = json.loads(raw_tiles) if isinstance(raw_tiles, str) else raw_tiles
 	rows = [tiles[index : index + 5] for index in range(0, len(tiles), 5)]
+	return await page_url(session, page), rows
+
+
+async def verify_wordle_board(session: CamoufoxSession | BrowserSession) -> Verification:
+	page = await get_current_page(session)
+	raw_status = await evaluate_page(
+		page,
+		"""() => {
+			const tileCount = document.querySelectorAll('#wordle-app-game [data-testid="tile"]').length;
+			const keyCount = document.querySelectorAll('[data-testid="keyboard"] button, button[data-key]').length;
+			const bodyText = document.body ? document.body.innerText : '';
+			return {tileCount, keyCount, hasWordleText: /wordle/i.test(bodyText)};
+		}""",
+	)
+	status = json.loads(raw_status) if isinstance(raw_status, str) else raw_status
+	passed = status.get('tileCount', 0) >= 30 and (status.get('keyCount', 0) >= 20 or status.get('hasWordleText'))
+	return Verification(
+		passed=passed,
+		details={'url': await page_url(session, page), **status},
+		errors=[] if passed else ['Wordle board and keyboard were not visibly ready.'],
+	)
+
+
+async def verify_wordle_feedback(session: CamoufoxSession | BrowserSession) -> Verification:
+	url, rows = await get_wordle_rows(session)
+	feedback_rows = [
+		row
+		for row in rows
+		if len(row) == 5
+		and all(tile.get('text') for tile in row)
+		and all(tile.get('state') and tile.get('state') != 'empty' for tile in row)
+	]
+	return Verification(
+		passed=bool(feedback_rows),
+		details={'url': url, 'feedback_rows': feedback_rows, 'rows': rows},
+		errors=[] if feedback_rows else ['No complete Wordle row with visible feedback was found.'],
+	)
+
+
+async def verify_wordle_solved(session: CamoufoxSession | BrowserSession) -> Verification:
+	url, rows = await get_wordle_rows(session)
 	solved_rows = [
 		''.join(tile['text'] for tile in row)
 		for row in rows
@@ -172,51 +462,77 @@ async def verify_wordle(session: CamoufoxSession | BrowserSession) -> Verificati
 	]
 	return Verification(
 		passed=bool(solved_rows),
-		details={'url': await page_url(session, page), 'solved_rows': solved_rows, 'rows': rows},
+		details={'url': url, 'solved_rows': solved_rows, 'rows': rows},
 		errors=[] if solved_rows else ['No complete all-correct Wordle row was visible.'],
 	)
 
 
-async def verify_saucedemo(session: CamoufoxSession | BrowserSession) -> Verification:
-	page = await get_current_page(session)
-	body_text = await evaluate_page(page, "() => document.body ? document.body.innerText : ''")
-	passed = 'Thank you for your order!' in body_text
-	return Verification(
-		passed=passed,
-		details={'url': await page_url(session, page), 'contains_thank_you': passed, 'body_excerpt': body_text[:1000]},
-		errors=[] if passed else ['Checkout completion message was not visible.'],
-	)
+def normalize_text(text: str) -> str:
+	return re.sub(r'\s+', ' ', text).strip().lower()
 
 
-async def verify_wikipedia(session: CamoufoxSession | BrowserSession, final_result: str | None) -> Verification:
+def has_price(text: str) -> bool:
+	return bool(re.search(r'([$€£]\s?\d+|\d+\s?(?:usd|eur|gbp|us\$))', text, flags=re.IGNORECASE))
+
+
+async def verify_generic_visible(
+	mission: Mission, session: CamoufoxSession | BrowserSession, final_result: str | None
+) -> Verification:
 	page = await get_current_page(session)
-	title = await page_title(session, page)
 	url = await page_url(session, page)
+	title = await page_title(session, page)
 	body_text = await evaluate_page(page, "() => document.body ? document.body.innerText : ''")
 	final = final_result or ''
-	passed = (
-		'wikipedia.org' in url
-		and 'playwright' in (title + url + body_text[:2000]).lower()
-		and 'playwright' in final.lower()
-		and len(final.strip()) >= 80
+	combined = normalize_text(f'{url} {title} {body_text[:4000]} {final}')
+	history_text = normalize_text(f'{url} {title}')
+	domain_ok = not mission.domains or any(domain in url for domain in mission.domains)
+	visible_ok = all(normalize_text(term) in combined for term in mission.visible_terms)
+	final_ok = all(normalize_text(term) in normalize_text(final) for term in mission.final_terms)
+	history_ok = all(
+		normalize_text(term) in combined or normalize_text(term) in history_text for term in mission.history_terms
 	)
+	price_ok = not mission.requires_price or has_price(f'{body_text[:4000]} {final}')
+	passed = domain_ok and visible_ok and final_ok and history_ok and price_ok and len(final.strip()) >= 40
+	errors = []
+	if not domain_ok:
+		errors.append(f'Final URL did not match expected domains: {mission.domains}')
+	if not visible_ok:
+		errors.append(f'Visible/final evidence missing required terms: {mission.visible_terms}')
+	if not final_ok:
+		errors.append(f'Final answer missing required terms: {mission.final_terms}')
+	if not history_ok:
+		errors.append(f'History/visible evidence missing required terms: {mission.history_terms}')
+	if not price_ok:
+		errors.append('Visible/final evidence did not include a price-like value.')
+	if len(final.strip()) < 40:
+		errors.append('Final answer was too short to verify the mission.')
 	return Verification(
 		passed=passed,
-		details={'url': url, 'title': title, 'final_result': final, 'body_excerpt': body_text[:1000]},
-		errors=[] if passed else ['Final browser state or final answer did not verify the Playwright Wikipedia task.'],
+		details={
+			'url': url,
+			'title': title,
+			'body_excerpt': body_text[:1000],
+			'final_result': final,
+			'domain_ok': domain_ok,
+			'visible_ok': visible_ok,
+			'final_ok': final_ok,
+			'history_ok': history_ok,
+			'price_ok': price_ok,
+		},
+		errors=errors,
 	)
 
 
 async def verify_mission(
 	mission: Mission, session: CamoufoxSession | BrowserSession, final_result: str | None
 ) -> Verification:
-	if mission.id == 'wordle':
-		return await verify_wordle(session)
-	if mission.id == 'saucedemo':
-		return await verify_saucedemo(session)
-	if mission.id == 'wikipedia':
-		return await verify_wikipedia(session, final_result)
-	raise ValueError(f'Unknown mission verifier: {mission.id}')
+	if mission.verifier == 'wordle_board':
+		return await verify_wordle_board(session)
+	if mission.verifier == 'wordle_feedback':
+		return await verify_wordle_feedback(session)
+	if mission.verifier == 'wordle_solved':
+		return await verify_wordle_solved(session)
+	return await verify_generic_visible(mission, session, final_result)
 
 
 async def get_current_page(session: CamoufoxSession | BrowserSession) -> Any:
@@ -267,7 +583,7 @@ def scrub(value: Any, *, key: Any = None) -> Any:
 	if is_sensitive_key(key):
 		return '<redacted>'
 	if isinstance(value, str):
-		result = value.replace(SAUCE_DEMO_PASSWORD, '<redacted-demo-password>')
+		result = value
 		if api_key:
 			result = result.replace(api_key, '<redacted-api-key>')
 		for marker in SENSITIVE_TEXT_MARKERS:
@@ -296,6 +612,90 @@ def redact_marker_value(text: str, marker: str) -> str:
 
 def action_result_summary(action_results: list[dict[str, Any]]) -> list[dict[str, Any]]:
 	return [{'action': result.get('action'), 'passed': bool(result.get('passed'))} for result in action_results]
+
+
+def mission_result_summary(mission_report: dict[str, Any]) -> dict[str, Any]:
+	history = mission_report.get('history', {})
+	verification = mission_report.get('verification', {})
+	diagnostics = mission_report.get('diagnostics', {})
+	final_state = diagnostics.get('final_state', {})
+	return {
+		'runtime': mission_report.get('runtime'),
+		'mission_id': mission_report.get('mission', {}).get('id'),
+		'family': mission_report.get('mission', {}).get('family'),
+		'variation': mission_report.get('mission', {}).get('variation'),
+		'complexity': mission_report.get('mission', {}).get('complexity'),
+		'passed': bool(mission_report.get('passed')),
+		'agent_success': history.get('is_successful'),
+		'verifier_success': verification.get('passed'),
+		'failure_class': mission_report.get('failure_class'),
+		'duration_seconds': diagnostics.get('duration_seconds'),
+		'steps': history.get('steps'),
+		'action_count': diagnostics.get('actions', {}).get('count'),
+		'final_url': final_state.get('url'),
+		'final_title': final_state.get('title'),
+		'errors': mission_report.get('errors', []),
+		'verifier_errors': verification.get('errors', []),
+		'runtime_tool_errors': diagnostics.get('runtime_tool_errors', []),
+		'fallback_paths': diagnostics.get('fallback_paths', []),
+		'candidate_rankings': diagnostics.get('candidate_rankings', []),
+	}
+
+
+def build_benchmark_matrix_report(reports: list[dict[str, Any]]) -> dict[str, Any]:
+	rows = [mission_result_summary(report) for report in reports]
+	by_mission: dict[str, dict[str, Any]] = {}
+	for row in rows:
+		mission_id = str(row.get('mission_id'))
+		by_mission.setdefault(
+			mission_id,
+			{
+				'mission_id': mission_id,
+				'family': row.get('family'),
+				'variation': row.get('variation'),
+				'complexity': row.get('complexity'),
+				'runtimes': {},
+				'delta': {},
+			},
+		)
+		by_mission[mission_id]['runtimes'][str(row.get('runtime'))] = row
+
+	for mission in by_mission.values():
+		chrome = mission['runtimes'].get('chrome')
+		camoufox = mission['runtimes'].get('camoufox')
+		if chrome and camoufox:
+			mission['delta'] = {
+				'pass_match': chrome.get('passed') == camoufox.get('passed'),
+				'failure_class_match': chrome.get('failure_class') == camoufox.get('failure_class'),
+				'duration_delta_seconds': round(
+					float(camoufox.get('duration_seconds') or 0) - float(chrome.get('duration_seconds') or 0),
+					2,
+				),
+				'step_delta': (camoufox.get('steps') or 0) - (chrome.get('steps') or 0),
+				'action_delta': (camoufox.get('action_count') or 0) - (chrome.get('action_count') or 0),
+				'chrome_passed': chrome.get('passed'),
+				'camoufox_passed': camoufox.get('passed'),
+			}
+
+	summary = {
+		'total_runs': len(rows),
+		'passed_runs': sum(1 for row in rows if row.get('passed')),
+		'by_runtime': {},
+	}
+	for runtime in sorted({str(row.get('runtime')) for row in rows}):
+		runtime_rows = [row for row in rows if row.get('runtime') == runtime]
+		summary['by_runtime'][runtime] = {
+			'runs': len(runtime_rows),
+			'passed': sum(1 for row in runtime_rows if row.get('passed')),
+			'failed': sum(1 for row in runtime_rows if not row.get('passed')),
+		}
+	report = {
+		'kind': 'real_world_chrome_cdp_camoufox_benchmark_matrix',
+		'summary': summary,
+		'missions': list(by_mission.values()),
+	}
+	redacted = scrub(report)
+	return {**redacted, 'json': json.dumps(redacted, indent=2, ensure_ascii=False)}
 
 
 def build_parity_matrix_report(rows: list[dict[str, Any]]) -> dict[str, Any]:
@@ -351,6 +751,9 @@ def classify_failure(report: dict[str, Any]) -> str:
 			*report.get('errors', []),
 			*report.get('history', {}).get('errors', []),
 			*report.get('verification', {}).get('errors', []),
+			report.get('diagnostics', {}).get('final_state', {}).get('url', ''),
+			report.get('diagnostics', {}).get('final_state', {}).get('title', ''),
+			report.get('diagnostics', {}).get('final_state', {}).get('body_excerpt', ''),
 		]
 	).lower()
 	if any(marker in text for marker in ('tool', 'runtime', 'detached', 'timeout', 'playwright', 'traceback')):
@@ -483,7 +886,12 @@ def default_report_path() -> Path:
 
 async def main_async() -> int:
 	args = parse_args()
-	mission_ids = args.mission or ['wordle', 'saucedemo', 'wikipedia']
+	if args.list_missions:
+		for mission in MISSIONS.values():
+			print(f'{mission.id}\t{mission.family}\tvariation={mission.variation}\tcomplexity={mission.complexity}')
+		return 0
+
+	mission_ids = args.mission or list(DEFAULT_MISSION_IDS)
 	report_path = args.report_path or default_report_path()
 	report = {
 		'started_at': datetime.now(UTC).isoformat(),
@@ -505,6 +913,7 @@ async def main_async() -> int:
 
 	report['finished_at'] = datetime.now(UTC).isoformat()
 	report['passed'] = all(mission['passed'] for mission in report['missions'])
+	report['matrix'] = build_benchmark_matrix_report(report['missions'])
 	report_path.parent.mkdir(parents=True, exist_ok=True)
 	report_path.write_text(json.dumps(report, indent=2, ensure_ascii=False))
 	print(f'report_path: {report_path}')

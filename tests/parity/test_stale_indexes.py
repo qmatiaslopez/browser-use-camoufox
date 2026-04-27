@@ -181,7 +181,12 @@ async def test_direct_click_reports_ambiguous_stale_repeated_results(tmp_path: P
 			}"""
 		)
 
-		with pytest.raises(RuntimeError, match='Ambiguous stale element relocalization'):
+		with pytest.raises(RuntimeError, match='Ambiguous stale element relocalization') as exc_info:
 			await session.on_ClickElementEvent(ClickElementEvent(node=target))
+		message = str(exc_info.value)
+		assert 'candidate_ranking=' in message
+		assert 'semantic_evidence=' in message
+		assert 'password' not in message.lower()
+		assert len(message) < 1200
 	finally:
 		await session.stop()

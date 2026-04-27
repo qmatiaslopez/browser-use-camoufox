@@ -33,3 +33,12 @@
   - `uv run pyright`
   - `uv run pytest -q`
   - `uv build`
+- Completed Task 4: ambiguous stale relocalization failures now emit a bounded `candidate_ranking` diagnostic with node ids, scores, and safe semantic evidence.
+- Benchmark matrix summaries now preserve runtime/tool errors, fallback paths, and candidate rankings while retaining redaction in serialized reports.
+- Task 4 validators pass:
+  - `uv run pytest -q tests/parity/test_stale_indexes.py tests/parity/test_chrome_camoufox_dom_parity.py`
+  - `uv run ruff check src tests scripts`
+  - `uv run ruff format --check src tests scripts`
+  - `uv run pyright`
+  - `uv run pytest -q`
+  - `uv build`

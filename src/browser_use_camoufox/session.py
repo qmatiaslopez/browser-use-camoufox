@@ -1450,13 +1450,10 @@ class CamoufoxSession(BrowserSession):
 		best_matches = [candidate for candidate, score in scored_matches if score == best_score]
 		if len(best_matches) == 1:
 			return best_matches[0]
-		top_scores = ', '.join(
-			f'node={candidate.node_id} score={score} evidence={self._safe_node_evidence(candidate)}'
-			for candidate, score in scored_matches[:3]
-		)
+		top_scores = self._candidate_ranking_diagnostics(scored_matches)
 		raise RuntimeError(
 			f'Ambiguous stale element relocalization for node {node.node_id}: '
-			f'{len(scored_matches)} actionable candidate(s), top scores: {top_scores}'
+			f'{len(scored_matches)} actionable candidate(s), candidate_ranking={top_scores}'
 		)
 
 	def _is_actionable_candidate(self, node: EnhancedDOMTreeNode) -> bool:
@@ -1508,6 +1505,13 @@ class CamoufoxSession(BrowserSession):
 	def _safe_node_evidence(self, node: EnhancedDOMTreeNode) -> str:
 		evidence = node.attributes.get(SEMANTIC_EVIDENCE_ATTRIBUTE) or node.node_value.strip()
 		return re.sub(r'\s+', ' ', evidence).strip()[:MAX_SEMANTIC_EVIDENCE_LENGTH]
+
+	def _candidate_ranking_diagnostics(self, scored_matches: list[tuple[EnhancedDOMTreeNode, int]]) -> str:
+		candidates = [
+			f'node={candidate.node_id} score={score} semantic_evidence={self._safe_node_evidence(candidate)}'
+			for candidate, score in scored_matches[:3]
+		]
+		return '[' + '; '.join(candidates)[:600] + ']'
 
 	def _action_node_signature(self, node: EnhancedDOMTreeNode) -> tuple[str, str, str, str, str] | None:
 		selector = node.attributes.get('data-browser-use-camoufox-selector')

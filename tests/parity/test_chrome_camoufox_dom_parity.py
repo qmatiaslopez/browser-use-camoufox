@@ -315,3 +315,107 @@ def test_mission_report_diagnostics_classify_runtime_tooling_failure():
 	assert report['diagnostics']['runtime_tool_errors'] == ['ClickElementError: target detached']
 	assert report['failure_class'] == 'runtime/tooling'
 	assert 'abcdef' not in report['diagnostics']['final_state']['body_excerpt']
+
+
+def test_benchmark_stack_has_five_families_three_variations_and_real_sites():
+	missions = real_world_kit.MISSIONS
+	assert len(missions) == 15
+
+	by_family: dict[str, list[object]] = {}
+	for mission in missions.values():
+		by_family.setdefault(mission.family, []).append(mission)
+
+	assert sorted(by_family) == [
+		'Documentation lookup',
+		'Dynamic keyboard app',
+		'Knowledge navigation',
+		'Public code/repo research',
+		'Real public search/filter flows',
+	]
+	for family_missions in by_family.values():
+		assert sorted(mission.variation for mission in family_missions) == [1, 2, 3]
+
+	assert 'saucedemo' not in missions
+	for mission in missions.values():
+		assert mission.domains
+		assert 'saucedemo' not in mission.url.lower()
+		assert 'localhost' not in mission.url.lower()
+
+
+def test_benchmark_matrix_report_compares_chrome_and_camoufox_runs():
+	chrome = {
+		'mission': {
+			'id': 'wiki_basic_lookup',
+			'family': 'Knowledge navigation',
+			'variation': 1,
+			'complexity': 'Simple',
+		},
+		'runtime': 'chrome',
+		'passed': True,
+		'failure_class': 'unknown',
+		'history': {'is_successful': True, 'steps': 3},
+		'verification': {'passed': True, 'errors': []},
+		'diagnostics': {
+			'duration_seconds': 10.0,
+			'actions': {'count': 4},
+			'final_state': {'url': 'https://en.wikipedia.org/wiki/Playwright_(software)', 'title': 'Playwright'},
+		},
+		'errors': [],
+	}
+	camoufox = {
+		**chrome,
+		'runtime': 'camoufox',
+		'diagnostics': {
+			'duration_seconds': 12.5,
+			'actions': {'count': 5},
+			'final_state': {'url': 'https://en.wikipedia.org/wiki/Playwright_(software)', 'title': 'Playwright'},
+		},
+	}
+
+	report = real_world_kit.build_benchmark_matrix_report([chrome, camoufox])
+
+	assert report['kind'] == 'real_world_chrome_cdp_camoufox_benchmark_matrix'
+	assert report['summary']['total_runs'] == 2
+	assert report['summary']['by_runtime']['chrome'] == {'runs': 1, 'passed': 1, 'failed': 0}
+	assert report['summary']['by_runtime']['camoufox'] == {'runs': 1, 'passed': 1, 'failed': 0}
+	assert report['missions'][0]['delta'] == {
+		'pass_match': True,
+		'failure_class_match': True,
+		'duration_delta_seconds': 2.5,
+		'step_delta': 0,
+		'action_delta': 1,
+		'chrome_passed': True,
+		'camoufox_passed': True,
+	}
+
+
+def test_benchmark_matrix_report_preserves_runtime_candidate_diagnostics():
+	report = real_world_kit.build_benchmark_matrix_report(
+		[
+			{
+				'mission': {'id': 'generic_flow', 'family': 'Diagnostics', 'variation': 1, 'complexity': 'Medium'},
+				'runtime': 'camoufox',
+				'passed': False,
+				'failure_class': 'runtime/tooling',
+				'history': {'is_successful': False, 'steps': 2},
+				'verification': {'passed': False, 'errors': []},
+				'diagnostics': {
+					'duration_seconds': 3.0,
+					'actions': {'count': 2},
+					'runtime_tool_errors': [
+						'candidate_ranking=[node=1 score=20 semantic_evidence=Open password=super-secret-token]'
+					],
+					'fallback_paths': [{'action': 'click', 'path': ['locator'], 'result': 'ambiguous'}],
+					'candidate_rankings': [{'node': 1, 'score': 20, 'semantic_evidence': 'Open'}],
+				},
+				'errors': ['timeout'],
+			}
+		]
+	)
+
+	runtime = report['missions'][0]['runtimes']['camoufox']
+	assert runtime['failure_class'] == 'runtime/tooling'
+	assert runtime['runtime_tool_errors']
+	assert runtime['fallback_paths'] == [{'action': 'click', 'path': ['locator'], 'result': 'ambiguous'}]
+	assert runtime['candidate_rankings'] == [{'node': 1, 'score': 20, 'semantic_evidence': 'Open'}]
+	assert 'super-secret-token' not in report['json']

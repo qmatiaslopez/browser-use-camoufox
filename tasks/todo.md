@@ -53,13 +53,13 @@ IMPORTANT: When a task is fully completed and its verification commands pass, up
     - `tests/parity/test_stale_indexes.py`
     - `tests/integration/test_dom_selector_reliability.py`
 
-- [ ] Task 4: Add candidate ranking diagnostics
+- [x] Task 4: Add candidate ranking diagnostics
   - Acceptance:
-    - [ ] Ambiguous relocalization errors include top candidate scores and safe evidence.
-    - [ ] Diagnostics omit sensitive values and remain size-bounded.
-    - [ ] Benchmark reports preserve these diagnostics under runtime/tool errors.
+    - [x] Ambiguous relocalization errors include top candidate scores and safe evidence.
+    - [x] Diagnostics omit sensitive values and remain size-bounded.
+    - [x] Benchmark reports preserve these diagnostics under runtime/tool errors.
   - Verify:
-    - [ ] `uv run pytest -q tests/parity/test_stale_indexes.py tests/parity/test_chrome_camoufox_dom_parity.py`
+    - [x] `uv run pytest -q tests/parity/test_stale_indexes.py tests/parity/test_chrome_camoufox_dom_parity.py`
   - Dependencies: Task 3
   - Files:
     - `src/browser_use_camoufox/session.py`

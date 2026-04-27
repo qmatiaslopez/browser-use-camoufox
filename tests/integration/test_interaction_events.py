@@ -194,3 +194,65 @@ async def test_click_recovers_when_primary_click_times_out_but_keyboard_activati
 		assert diagnostics['fallback']['result'] == 'keyboard_activation_succeeded'
 	finally:
 		await session.stop()
+
+
+@pytest.mark.anyio
+async def test_click_recovers_with_associated_form_submit_when_activation_does_not_submit(tmp_path: Path):
+	fixture = tmp_path / 'generic_form_submit_fallback.html'
+	fixture.write_text(
+		"""
+		<html>
+			<head><title>Generic form submit fallback</title></head>
+			<body>
+				<form id="unrelated-form">
+					<input id="other-query" name="q" value="unrelated" />
+					<button id="other-button" type="submit">Other search</button>
+				</form>
+				<form id="search-form">
+					<label for="query">Search knowledge base</label>
+					<input id="query" name="q" value="runtime diagnostics" />
+					<button id="search-button" type="submit">Search</button>
+				</form>
+				<p id="result">Waiting</p>
+				<script>
+					document.querySelector('#search-button').addEventListener('click', (event) => {
+						event.preventDefault();
+					});
+					document.querySelector('#search-button').addEventListener('keydown', (event) => {
+						if (event.key === ' ' || event.key === 'Enter') event.preventDefault();
+					});
+					document.querySelector('#unrelated-form').addEventListener('submit', (event) => {
+						event.preventDefault();
+						document.querySelector('#result').textContent = 'Submitted unrelated form';
+					});
+					document.querySelector('#search-form').addEventListener('submit', (event) => {
+						event.preventDefault();
+						document.querySelector('#result').textContent = 'Submitted runtime diagnostics';
+					});
+				</script>
+			</body>
+		</html>
+		"""
+	)
+	session = CamoufoxSession(headless=True)
+
+	try:
+		await session.start()
+		await session.navigate_to(fixture.as_uri())
+		state_event = session.event_bus.dispatch(BrowserStateRequestEvent(include_dom=True, include_screenshot=False))
+		await state_event
+		state = await state_event.event_result()
+		button = next(
+			node for node in state.dom_state.selector_map.values() if node.attributes.get('id') == 'search-button'
+		)
+
+		await session.on_ClickElementEvent(ClickElementEvent(node=button))
+
+		page = await session.get_current_page()
+		assert await page.locator('#result').text_content() == 'Submitted runtime diagnostics'
+		diagnostics = session.last_click_diagnostics
+		assert diagnostics is not None
+		assert diagnostics['fallback']['attempted'] == ['click', 'keyboard_activation', 'form_submit']
+		assert diagnostics['fallback']['result'] == 'form_submit_succeeded'
+	finally:
+		await session.stop()

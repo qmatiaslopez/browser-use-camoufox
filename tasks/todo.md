@@ -87,13 +87,13 @@ IMPORTANT: When a task is fully completed and its verification commands pass, up
     - `tests/integration/test_interaction_events.py`
     - `tests/parity/test_stale_indexes.py`
 
-- [ ] Task 6: Add generic form/search submit fallback
+- [x] Task 6: Add generic form/search submit fallback
   - Acceptance:
-    - [ ] Generic search form fixture succeeds when the button click times out but form submit/Enter works.
-    - [ ] Fallback requires a clear associated form/input and does not submit unrelated forms.
-    - [ ] Diagnostics distinguish click fallback from form submit fallback.
+    - [x] Generic search form fixture succeeds when the button click times out but form submit/Enter works.
+    - [x] Fallback requires a clear associated form/input and does not submit unrelated forms.
+    - [x] Diagnostics distinguish click fallback from form submit fallback.
   - Verify:
-    - [ ] `uv run pytest -q tests/integration/test_interaction_events.py tests/integration/test_dom_selector_reliability.py`
+    - [x] `uv run pytest -q tests/integration/test_interaction_events.py tests/integration/test_dom_selector_reliability.py`
   - Dependencies: Task 5
   - Files:
     - `src/browser_use_camoufox/session.py`

@@ -478,10 +478,19 @@ class CamoufoxSession(BrowserSession):
 			await self._keyboard_activate_node(node)
 			after = await self._capture_click_state(node)
 			diagnostics = self._click_change_diagnostics(before, after)
+		if (
+			event.button == 'left'
+			and not self._click_page_changed(diagnostics)
+			and await self._can_submit_associated_form(node)
+		):
+			fallback_attempted.append('form_submit')
+			await self._submit_associated_form(node)
+			after = await self._capture_click_state(node)
+			diagnostics = self._click_change_diagnostics(before, after)
 		diagnostics['fallback'] = {
 			'attempted': fallback_attempted,
-			'result': 'keyboard_activation_succeeded'
-			if fallback_attempted[-1] == 'keyboard_activation' and self._click_state_changed(diagnostics)
+			'result': f'{fallback_attempted[-1]}_succeeded'
+			if fallback_attempted[-1] != 'click' and self._click_state_changed(diagnostics)
 			else 'click_succeeded'
 			if self._click_state_changed(diagnostics)
 			else 'no_change_detected',
@@ -1639,6 +1648,43 @@ class CamoufoxSession(BrowserSession):
 		if node.tag_name.upper() == 'BUTTON' or (node.attributes.get('role') or '').lower() == 'button':
 			key = 'Space'
 		await locator.press(key, timeout=CLICK_TIMEOUT_MS)
+
+	async def _can_submit_associated_form(self, node: EnhancedDOMTreeNode) -> bool:
+		if node.attributes.get('data-browser-use-camoufox-disabled') == 'true':
+			return False
+		if node.attributes.get(OBSERVABLE_ELEMENT_ATTRIBUTE) == 'true':
+			return False
+		if node.tag_name.upper() not in {'BUTTON', 'INPUT'}:
+			return False
+		button_type = (node.attributes.get('type') or 'submit').lower()
+		if button_type not in {'submit', 'image'}:
+			return False
+		return bool(
+			await self._locator_for_node(node).evaluate(
+				"""element => {
+					const form = element.form || element.closest('form');
+					if (!form) return false;
+					const submitters = Array.from(form.querySelectorAll(
+						'button, input[type="submit"], input[type="image"]'
+					)).filter((candidate) => {
+						if (candidate.disabled || candidate.getAttribute('aria-disabled') === 'true') return false;
+						const type = (candidate.getAttribute('type') || 'submit').toLowerCase();
+						return candidate.tagName.toLowerCase() === 'button' || type === 'submit' || type === 'image';
+					});
+					return submitters.length === 1 && submitters[0] === element;
+				}"""
+			)
+		)
+
+	async def _submit_associated_form(self, node: EnhancedDOMTreeNode) -> None:
+		await self._locator_for_node(node).evaluate(
+			"""element => {
+				const form = element.form || element.closest('form');
+				if (!form) throw new Error('No associated form found');
+				if (typeof form.requestSubmit === 'function') form.requestSubmit(element);
+				else form.dispatchEvent(new Event('submit', {bubbles: true, cancelable: true}));
+			}"""
+		)
 
 	async def _capture_click_state(self, node: EnhancedDOMTreeNode) -> dict[str, Any]:
 		page = await self._ensure_page()

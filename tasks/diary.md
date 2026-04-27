@@ -52,3 +52,12 @@
   - `uv run pyright`
   - `uv run pytest -q`
   - `uv build`
+- Completed Task 6: click recovery now falls back to submitting the clicked element's single clear associated form when click and keyboard activation do not change page state.
+- Added a generic two-form fixture proving the fallback submits the intended form only and reports `form_submit_succeeded` separately from click/keyboard fallback diagnostics.
+- Task 6 validators pass:
+  - `uv run pytest -q tests/integration/test_interaction_events.py tests/integration/test_dom_selector_reliability.py`
+  - `uv run ruff check src tests scripts`
+  - `uv run ruff format --check src tests scripts`
+  - `uv run pyright`
+  - `uv run pytest -q`
+  - `uv build`

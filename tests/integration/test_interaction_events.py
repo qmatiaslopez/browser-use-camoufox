@@ -141,3 +141,53 @@ async def test_click_records_bounded_post_click_change_diagnostics(tmp_path: Pat
 		assert 'data-token' not in diagnostics['target_attributes']['before']
 	finally:
 		await session.stop()
+
+
+@pytest.mark.anyio
+@pytest.mark.xfail(reason='RED fixture for the future safe click/form submit fallback task.', strict=True)
+async def test_click_recovers_when_primary_click_times_out_but_keyboard_activation_submits(tmp_path: Path):
+	fixture = tmp_path / 'generic_search_timeout.html'
+	fixture.write_text(
+		"""
+		<html>
+			<head><title>Generic search timeout</title></head>
+			<body>
+				<form id="search-form">
+					<label for="query">Search knowledge base</label>
+					<input id="query" name="q" value="runtime diagnostics" />
+					<button id="search-button" type="submit">Search</button>
+				</form>
+				<p id="result">Waiting</p>
+				<script>
+					const button = document.querySelector('#search-button');
+					button.addEventListener('pointerdown', (event) => {
+						event.preventDefault();
+						button.style.pointerEvents = 'none';
+					}, { capture: true });
+					document.querySelector('#search-form').addEventListener('submit', (event) => {
+						event.preventDefault();
+						document.querySelector('#result').textContent = 'Submitted runtime diagnostics';
+					});
+				</script>
+			</body>
+		</html>
+		"""
+	)
+	session = CamoufoxSession(headless=True)
+
+	try:
+		await session.start()
+		await session.navigate_to(fixture.as_uri())
+		state_event = session.event_bus.dispatch(BrowserStateRequestEvent(include_dom=True, include_screenshot=False))
+		await state_event
+		state = await state_event.event_result()
+		button = next(
+			node for node in state.dom_state.selector_map.values() if node.attributes.get('id') == 'search-button'
+		)
+
+		await session.on_ClickElementEvent(ClickElementEvent(node=button))
+
+		page = await session.get_current_page()
+		assert await page.locator('#result').text_content() == 'Submitted runtime diagnostics'
+	finally:
+		await session.stop()

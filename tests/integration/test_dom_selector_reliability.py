@@ -352,3 +352,89 @@ async def test_dense_page_keeps_main_semantic_content_when_observation_is_bounde
 			await session.on_ClickElementEvent(ClickElementEvent(node=primary_card))
 	finally:
 		await session.stop()
+
+
+@pytest.mark.anyio
+async def test_state_includes_generic_autocomplete_listbox_options(tmp_path: Path):
+	fixture = tmp_path / 'generic_autocomplete.html'
+	fixture.write_text(
+		"""
+		<html>
+			<body>
+				<label for="destination">Destination</label>
+				<input
+					id="destination"
+					role="combobox"
+					aria-controls="suggestions"
+					aria-expanded="true"
+					value="north"
+				/>
+				<ul id="suggestions" role="listbox">
+					<li role="option" data-value="north-harbor">North Harbor</li>
+					<li role="option" data-value="north-hills">North Hills</li>
+				</ul>
+			</body>
+		</html>
+		"""
+	)
+	session = CamoufoxSession(headless=True)
+
+	try:
+		await session.start()
+		await session.navigate_to(fixture.as_uri())
+		state_event = session.event_bus.dispatch(BrowserStateRequestEvent(include_dom=True, include_screenshot=False))
+		await state_event
+		state = await state_event.event_result()
+
+		options = [node for node in state.dom_state.selector_map.values() if node.attributes.get('role') == 'option']
+		assert [option.node_value for option in options] == ['North Harbor', 'North Hills']
+		assert all(option.snapshot_node is not None and option.snapshot_node.is_clickable for option in options)
+		assert 'North Harbor' in state.dom_state.llm_representation()
+	finally:
+		await session.stop()
+
+
+@pytest.mark.anyio
+async def test_frame_detach_fixture_recreates_target_after_observed_action(tmp_path: Path):
+	fixture = tmp_path / 'generic_frame_detach.html'
+	fixture.write_text(
+		"""
+		<html>
+			<body>
+				<iframe id="dynamic-frame" srcdoc="<button id='target'>Continue</button>"></iframe>
+				<script>
+					document.body.dataset.ready = 'true';
+				</script>
+			</body>
+		</html>
+		"""
+	)
+	session = CamoufoxSession(headless=True)
+
+	try:
+		await session.start()
+		await session.navigate_to(fixture.as_uri())
+		state_event = session.event_bus.dispatch(BrowserStateRequestEvent(include_dom=True, include_screenshot=False))
+		await state_event
+		state = await state_event.event_result()
+		target = next(node for node in state.dom_state.selector_map.values() if node.node_value == 'Continue')
+
+		page = await session.get_current_page()
+		await page.evaluate(
+			"""() => {
+				document.querySelector('#dynamic-frame').remove();
+				const frame = document.createElement('iframe');
+				frame.id = 'dynamic-frame';
+				frame.srcdoc = [
+					`<button id="target" onclick="parent.document.body.dataset.clicked='true'">`,
+					'Continue</button>',
+				].join('');
+				document.body.appendChild(frame);
+			}"""
+		)
+
+		await session.on_ClickElementEvent(ClickElementEvent(node=target))
+
+		assert await page.locator('body').get_attribute('data-clicked') == 'true'
+	finally:
+		await session.stop()

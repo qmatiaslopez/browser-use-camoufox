@@ -1,22 +1,16 @@
+# Project Diary
+
 ## 2026-04-27
 
-- Completed Task 1: benchmark mission reports now include generic diagnostics for final URL/title/body metrics, action names/counts, duration, URL transitions, runtime/tool errors, verifier details, and failure classification.
-- Added bounded redaction for sensitive marker values in diagnostic excerpts and kept focused Task 1 validators passing.
-- Completed Task 2: DOM observation, `search_page`, and `find_elements` now share normalized visible text behavior and bounded safe attribute capture that skips sensitive-looking attributes.
-- Added regression coverage for hidden text exclusion, cross-tool text normalization, safe attributes, selector metadata, and observable-only action boundaries; focused Task 2 validators pass.
-- Completed Task 3: bounded DOM observation now prioritizes central semantic containers and de-prioritizes repeated navigation/filter chrome while preserving observable-only action safety.
-- Added dense-page regression coverage and full validators pass (`ruff check`, `ruff format --check`, `pyright`, `pytest`).
-- Completed Task 4: click actions now perform a single DOM recapture/relocalization by stable target signature and reject unavailable, ambiguous, disabled, or observable-only recovery candidates.
-- Added stale target relocalization coverage; full validators and package build pass (`ruff check`, `ruff format --check`, `pyright`, `pytest`, `uv build`).
-- Completed Task 5: successful element clicks now record bounded post-click diagnostics for URL/title changes, DOM count deltas, visible text excerpts, and safe target attribute changes without changing the existing successful click return value.
-- Added click diagnostic regression coverage with sensitive attribute omission; focused Task 5 validators, pyright, and package build pass.
-- Completed Task 6: indexed scroll events now target the nearest scrollable ancestor and fall back to page scrolling when no meaningful container is available, preserving unindexed page scroll behavior.
-- Added nested scroll regression coverage; focused Task 6 validators, full pytest, ruff, pyright, and package build pass.
-- Completed Task 7: scroll actions now return bounded diagnostics with before/after offsets, max offsets, target index/type, and no-op blocker classification while preserving event scroll behavior.
-- Added deterministic no-op scroll regression coverage; focused Task 7 validators, full pytest, ruff, pyright, and package build pass.
-- Completed Task 8: keyboard send_keys now classifies printable text, newline/tab text, special keys, key chords, and invalid strings before dispatching to Playwright.
-- Added regression coverage for newline text typing, key chords, and ambiguous key diagnostics; focused Task 8 validators, full pytest, ruff, pyright, and package build pass.
-- Completed Task 9: keyboard-only press actions now prepare focus on generic application/main/canvas/app-root targets when no editable element is active and record bounded active-element diagnostics before and after.
-- Added generic app focus regression coverage; focused Task 9 validator, full pytest, ruff, pyright, and package build pass.
-- Completed Task 10: `search_page` and `find_elements` now include normalized visible text evidence with safe attributes and generic element paths/context while continuing to exclude hidden text and sensitive attributes.
-- Added bounded tool evidence regression coverage; focused Task 10 validator, full pytest, ruff, pyright, and package build pass.
+- Completed Task 1: added generic local fixtures for the remaining failure classes:
+  - Search/form click fallback when a primary click path does not submit.
+  - Repeated result relocalization that should preserve semantic target identity.
+  - Ambiguous repeated-result relocalization diagnostics.
+  - ARIA autocomplete/listbox option observation.
+  - Frame-detach recapture when an observed iframe target reappears.
+- Verified the new fixtures are generic and avoid public-site names/selectors.
+- Task 1 validators pass:
+  - `uv run pytest -q tests/integration/test_interaction_events.py tests/parity/test_stale_indexes.py`
+  - `uv run pytest -q tests/integration/test_dom_selector_reliability.py`
+  - `uv run ruff check tests/integration/test_interaction_events.py tests/parity/test_stale_indexes.py tests/integration/test_dom_selector_reliability.py`
+  - `uv run ruff format --check tests/integration/test_interaction_events.py tests/parity/test_stale_indexes.py tests/integration/test_dom_selector_reliability.py`

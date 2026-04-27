@@ -1,7 +1,7 @@
 from pathlib import Path
 
 import pytest
-from browser_use.browser.events import BrowserStateRequestEvent, ClickElementEvent, SendKeysEvent
+from browser_use.browser.events import BrowserStateRequestEvent, ClickElementEvent, SendKeysEvent, TypeTextEvent
 
 from browser_use_camoufox import CamoufoxSession
 
@@ -145,5 +145,39 @@ async def test_click_failure_includes_selector_diagnostics(tmp_path: Path):
 
 		with pytest.raises(RuntimeError, match='Camoufox click failed after 5000ms'):
 			await session.on_ClickElementEvent(ClickElementEvent(node=button))
+	finally:
+		await session.stop()
+
+
+@pytest.mark.anyio
+async def test_type_text_rejects_observable_only_nodes_but_accepts_text_inputs(tmp_path: Path):
+	fixture = tmp_path / 'actionability.html'
+	fixture.write_text(
+		"""
+		<html>
+			<body>
+				<p id="status" data-state="idle">Status text</p>
+				<input id="name" />
+			</body>
+		</html>
+		"""
+	)
+	session = CamoufoxSession(headless=True)
+
+	try:
+		await session.start()
+		await session.navigate_to(fixture.as_uri())
+		state_event = session.event_bus.dispatch(BrowserStateRequestEvent(include_dom=True, include_screenshot=False))
+		await state_event
+		state = await state_event.event_result()
+		status = next(node for node in state.dom_state.selector_map.values() if node.attributes.get('id') == 'status')
+		input_node = next(node for node in state.dom_state.selector_map.values() if node.attributes.get('id') == 'name')
+
+		with pytest.raises(RuntimeError, match='observable but not editable'):
+			await session.on_TypeTextEvent(TypeTextEvent(node=status, clear=True, text='ignored'))
+
+		await session.on_TypeTextEvent(TypeTextEvent(node=input_node, clear=True, text='Ada'))
+		page = await session.get_current_page()
+		assert await page.locator('#name').input_value() == 'Ada'
 	finally:
 		await session.stop()

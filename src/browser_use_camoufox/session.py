@@ -444,6 +444,11 @@ class CamoufoxSession(BrowserSession):
 	async def on_TypeTextEvent(self, event: TypeTextEvent) -> dict[str, Any] | None:
 		if event.node.attributes.get('type') == 'file':
 			raise RuntimeError('File inputs require upload support; use the upload-file compatibility path instead.')
+		if event.node.attributes.get(OBSERVABLE_ELEMENT_ATTRIBUTE) == 'true':
+			raise RuntimeError(
+				f'Element {event.node.node_id} is observable but not editable. '
+				'Use an input, textarea, contenteditable element, or keyboard send_keys instead.'
+			)
 		locator = self._locator_for_node(event.node)
 		if event.clear:
 			await locator.fill('')

@@ -50,7 +50,7 @@ IMPORTANT: When a task is fully completed and its Verify command passes, you mus
     - `tests/integration/test_dom_selector_reliability.py`
     - `tests/parity/test_chrome_camoufox_dom_parity.py`
 
-- [ ] Task 4: Preserve actionability and safe interaction mapping
+- [x] Task 4: Preserve actionability and safe interaction mapping
   - Acceptance:
     - [ ] Clickable controls still click by browser-use index.
     - [ ] Text inputs still accept `input` and printable `send_keys`.

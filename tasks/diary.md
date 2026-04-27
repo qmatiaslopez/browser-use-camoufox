@@ -14,3 +14,5 @@
 - Added nested scroll regression coverage; focused Task 6 validators, full pytest, ruff, pyright, and package build pass.
 - Completed Task 7: scroll actions now return bounded diagnostics with before/after offsets, max offsets, target index/type, and no-op blocker classification while preserving event scroll behavior.
 - Added deterministic no-op scroll regression coverage; focused Task 7 validators, full pytest, ruff, pyright, and package build pass.
+- Completed Task 8: keyboard send_keys now classifies printable text, newline/tab text, special keys, key chords, and invalid strings before dispatching to Playwright.
+- Added regression coverage for newline text typing, key chords, and ambiguous key diagnostics; focused Task 8 validators, full pytest, ruff, pyright, and package build pass.

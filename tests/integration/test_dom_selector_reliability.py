@@ -84,6 +84,57 @@ async def test_send_keys_types_printable_words_but_presses_special_keys(tmp_path
 
 
 @pytest.mark.anyio
+async def test_send_keys_normalizes_text_newlines_and_key_chords(tmp_path: Path):
+	fixture = tmp_path / 'keyboard-normalized.html'
+	fixture.write_text(
+		"""
+		<html>
+			<body>
+				<textarea id="target" autofocus></textarea>
+				<script>
+					document.addEventListener('keydown', (event) => {
+						if (event.ctrlKey && event.key.toLowerCase() === 'a') {
+							document.body.dataset.ctrlA = 'true';
+						}
+					});
+				</script>
+			</body>
+		</html>
+		"""
+	)
+	session = CamoufoxSession(headless=True)
+
+	try:
+		await session.start()
+		await session.navigate_to(fixture.as_uri())
+		page = await session.get_current_page()
+
+		await session.on_SendKeysEvent(SendKeysEvent(keys='Alpha\nBeta'))
+		assert await page.locator('#target').input_value() == 'Alpha\nBeta'
+
+		await session.on_SendKeysEvent(SendKeysEvent(keys='Control+A'))
+		assert await page.locator('body').get_attribute('data-ctrl-a') == 'true'
+	finally:
+		await session.stop()
+
+
+@pytest.mark.anyio
+async def test_send_keys_rejects_ambiguous_key_strings(tmp_path: Path):
+	fixture = tmp_path / 'keyboard-invalid.html'
+	fixture.write_text('<html><body><input id="target" autofocus /></body></html>')
+	session = CamoufoxSession(headless=True)
+
+	try:
+		await session.start()
+		await session.navigate_to(fixture.as_uri())
+
+		with pytest.raises(RuntimeError, match='Ambiguous keyboard input'):
+			await session.on_SendKeysEvent(SendKeysEvent(keys='Control+'))
+	finally:
+		await session.stop()
+
+
+@pytest.mark.anyio
 async def test_state_grid_cells_are_observable_with_state_and_labels(tmp_path: Path):
 	fixture = tmp_path / 'state-grid.html'
 	fixture.write_text(

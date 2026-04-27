@@ -134,13 +134,13 @@ IMPORTANT: When a task is fully completed and its verification commands pass, up
 
 ## Phase 4: Keyboard and App Focus
 
-- [ ] Task 8: Normalize keyboard input handling
+- [x] Task 8: Normalize keyboard input handling
   - Acceptance:
-    - [ ] Printable text, special keys, key chords, and newline/Enter sequences are handled by explicit paths.
-    - [ ] Existing printable-word and special-key behavior remains compatible.
-    - [ ] Invalid or ambiguous key strings produce clear diagnostics.
+    - [x] Printable text, special keys, key chords, and newline/Enter sequences are handled by explicit paths.
+    - [x] Existing printable-word and special-key behavior remains compatible.
+    - [x] Invalid or ambiguous key strings produce clear diagnostics.
   - Verify:
-    - [ ] `uv run pytest -q tests/integration/test_dom_selector_reliability.py tests/integration/test_basic_actions.py`
+    - [x] `uv run pytest -q tests/integration/test_dom_selector_reliability.py tests/integration/test_basic_actions.py`
   - Dependencies: Task 2
   - Files:
     - `src/browser_use_camoufox/session.py`

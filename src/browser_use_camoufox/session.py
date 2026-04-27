@@ -500,9 +500,15 @@ class CamoufoxSession(BrowserSession):
 
 	async def on_SendKeysEvent(self, event: SendKeysEvent) -> None:
 		page = await self._ensure_page()
-		if self._should_type_keyboard_text(event.keys):
+		kind = self._classify_keyboard_input(event.keys)
+		if kind == 'text':
 			await page.keyboard.type(event.keys)
 			return
+		if kind == 'invalid':
+			raise RuntimeError(
+				f'Ambiguous keyboard input for Camoufox send_keys: {event.keys!r}. '
+				'Use printable text, a Playwright special key, or a complete key chord like "Control+A".'
+			)
 		await page.keyboard.press(event.keys)
 
 	async def on_GetDropdownOptionsEvent(self, event: GetDropdownOptionsEvent) -> dict[str, str]:
@@ -1504,14 +1510,21 @@ class CamoufoxSession(BrowserSession):
 			safe_attributes[name] = re.sub(r'\s+', ' ', str(value)).strip()[:MAX_SAFE_ATTRIBUTE_VALUE_LENGTH]
 		return safe_attributes
 
-	def _should_type_keyboard_text(self, keys: str) -> bool:
-		if len(keys) <= 1:
-			return False
-		if '+' in keys:
-			return False
+	def _classify_keyboard_input(self, keys: str) -> Literal['text', 'press', 'invalid']:
+		if not keys:
+			return 'invalid'
 		if keys in PLAYWRIGHT_SPECIAL_KEYS:
-			return False
-		return keys.isprintable()
+			return 'press'
+		if '+' in keys:
+			parts = keys.split('+')
+			if any(not part for part in parts):
+				return 'invalid'
+			return 'press'
+		if len(keys) == 1 and not keys.isprintable():
+			return 'invalid'
+		if len(keys) == 1 or any(character in keys for character in ('\n', '\r', '\t')) or keys.isprintable():
+			return 'text'
+		return 'invalid'
 
 	def _frame_for_target(self, page: Page, frame_id: str, frame_url: str):
 		for frame_index, frame in enumerate(page.frames):

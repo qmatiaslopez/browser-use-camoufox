@@ -119,7 +119,7 @@ IMPORTANT: When a task is fully completed and its Verify command passes, you mus
   - Files:
     - No source changes expected unless validation reveals a bug.
 
-- [ ] Task 8: Final validation and cleanup
+- [x] Task 8: Final validation and cleanup
   - Acceptance:
     - [ ] Lint, format, type check, and full tests pass.
     - [ ] Diff contains no CDP use, no Wordle-specific extraction selectors, and no secrets/artifacts.

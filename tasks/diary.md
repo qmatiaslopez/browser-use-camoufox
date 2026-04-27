@@ -10,3 +10,4 @@
 - Chrome baseline report was generated under xvfb; Wikipedia passed, while Wordle and SauceDemo failed due to model/agent step-budget and navigation/action-choice issues rather than a Camoufox runtime issue.
 - Initial headed mission run failed because no DISPLAY was available in WSL; reran with xvfb-run.
 - Re-verified `uv run ruff check src tests scripts`, `uv run ruff format --check src tests scripts`, `uv run pyright`, `uv run pytest -q`, and `uv build` pass.
+- Completed Task 8 final validation and cleanup: lint, format check, pyright, full pytest suite, and build all passed; git status shows only coordination/spec files untracked, with no generated artifacts staged.

@@ -81,8 +81,10 @@ DEFAULT_FIND_ELEMENT_ATTRIBUTES = [
 	'data-state',
 ]
 OBSERVABLE_ELEMENT_ATTRIBUTE = 'data-browser-use-camoufox-observable'
+SEMANTIC_EVIDENCE_ATTRIBUTE = 'data-browser-use-camoufox-semantic-evidence'
 REDACTED_ATTRIBUTE_VALUE = '[redacted]'
 MAX_SAFE_ATTRIBUTE_VALUE_LENGTH = 120
+MAX_SEMANTIC_EVIDENCE_LENGTH = 240
 SENSITIVE_ATTRIBUTE_MARKERS = (
 	'api-key',
 	'apikey',
@@ -1362,6 +1364,9 @@ class CamoufoxSession(BrowserSession):
 				attributes['data-browser-use-camoufox-frame-url'] = str(target['frame_url'])
 			if target['shadow_root_type']:
 				attributes['data-browser-use-camoufox-shadow-root'] = str(target['shadow_root_type'])
+			evidence = self._semantic_evidence_for_node(element, attributes)
+			if evidence:
+				attributes[SEMANTIC_EVIDENCE_ATTRIBUTE] = evidence
 			selector_map[index] = self._node_from_payload(element, index, attributes)
 		self._cached_selector_map = selector_map
 		return SerializedDOMState(_root=self._selector_tree_root(selector_map), selector_map=selector_map)
@@ -1815,6 +1820,20 @@ class CamoufoxSession(BrowserSession):
 		if not isinstance(attributes, dict):
 			return {}
 		return {str(key): str(value) for key, value in attributes.items() if value is not None}
+
+	def _semantic_evidence_for_node(self, element: dict[str, Any], attributes: dict[str, str]) -> str:
+		parts = []
+		text = re.sub(r'\s+', ' ', str(element.get('text') or '')).strip()
+		if text:
+			parts.append(f'text={text}')
+		for name in ('data-testid', 'data-state', 'aria-label', 'title', 'placeholder', 'alt', 'name', 'type', 'role'):
+			value = attributes.get(name)
+			if value:
+				parts.append(f'{name}={value}')
+		evidence = '; '.join(parts)
+		if len(evidence) <= MAX_SEMANTIC_EVIDENCE_LENGTH:
+			return evidence
+		return evidence[: MAX_SEMANTIC_EVIDENCE_LENGTH - 1].rstrip() + '…'
 
 	def _node_from_payload(
 		self, payload: dict[str, Any], index: int, attributes: dict[str, str]

@@ -14,3 +14,13 @@
   - `uv run pytest -q tests/integration/test_dom_selector_reliability.py`
   - `uv run ruff check tests/integration/test_interaction_events.py tests/parity/test_stale_indexes.py tests/integration/test_dom_selector_reliability.py`
   - `uv run ruff format --check tests/integration/test_interaction_events.py tests/parity/test_stale_indexes.py tests/integration/test_dom_selector_reliability.py`
+- Completed Task 2: actionable DOM nodes now include bounded semantic evidence derived from safe text and non-sensitive attributes while preserving existing selector/actionability metadata.
+- Added regression coverage that semantic evidence is present, bounded, and omits sensitive token/session attributes.
+- Task 2 validators pass:
+  - `uv run pytest -q tests/integration/test_dom_selector_reliability.py`
+  - `uv run pytest -q tests/parity/test_search_extract_screenshot.py`
+  - `uv run ruff check src tests scripts`
+  - `uv run ruff format --check src tests scripts`
+  - `uv run pyright`
+  - `uv run pytest -q`
+  - `uv build`

@@ -17,14 +17,14 @@ IMPORTANT: When a task is fully completed and its verification commands pass, up
     - `tests/parity/test_stale_indexes.py`
     - `tests/integration/test_dom_selector_reliability.py`
 
-- [ ] Task 2: Add semantic target evidence to DOM nodes
+- [x] Task 2: Add semantic target evidence to DOM nodes
   - Acceptance:
-    - [ ] Every actionable node has a bounded semantic evidence payload.
-    - [ ] Sensitive attributes remain omitted/redacted.
-    - [ ] Output remains bounded and existing observable/actionable representation is preserved.
+    - [x] Every actionable node has a bounded semantic evidence payload.
+    - [x] Sensitive attributes remain omitted/redacted.
+    - [x] Output remains bounded and existing observable/actionable representation is preserved.
   - Verify:
-    - [ ] `uv run pytest -q tests/integration/test_dom_selector_reliability.py`
-    - [ ] `uv run pytest -q tests/parity/test_search_extract_screenshot.py`
+    - [x] `uv run pytest -q tests/integration/test_dom_selector_reliability.py`
+    - [x] `uv run pytest -q tests/parity/test_search_extract_screenshot.py`
   - Dependencies: Task 1
   - Files:
     - `src/browser_use_camoufox/session.py`

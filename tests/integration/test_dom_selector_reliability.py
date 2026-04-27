@@ -56,6 +56,55 @@ async def test_selector_map_uses_stable_ordinals_and_metadata(tmp_path: Path):
 
 
 @pytest.mark.anyio
+async def test_actionable_nodes_include_bounded_redacted_semantic_evidence(tmp_path: Path):
+	fixture = tmp_path / 'semantic_evidence.html'
+	long_label = 'Alpha ' * 80
+	fixture.write_text(
+		f"""
+		<html>
+			<body>
+				<label for="query">Search Terms</label>
+				<button
+					id="submit"
+					type="submit"
+					name="lookup"
+					title="Run lookup"
+					aria-label="{long_label}"
+					data-testid="lookup-button"
+					data-session-token="must-not-leak"
+					data-state="ready"
+				>
+					Visible lookup action
+				</button>
+			</body>
+		</html>
+		"""
+	)
+	session = CamoufoxSession(headless=True)
+
+	try:
+		await session.start()
+		await session.navigate_to(fixture.as_uri())
+		state_event = session.event_bus.dispatch(BrowserStateRequestEvent(include_dom=True, include_screenshot=False))
+		await state_event
+		state = await state_event.event_result()
+
+		button = next(node for node in state.dom_state.selector_map.values() if node.attributes.get('id') == 'submit')
+		evidence = button.attributes.get('data-browser-use-camoufox-semantic-evidence')
+		assert evidence is not None
+		assert 'visible lookup action' in evidence.lower()
+		assert 'aria-label=' in evidence
+		assert 'data-testid=lookup-button' in evidence
+		assert 'data-state=ready' in evidence
+		assert 'data-session-token' not in evidence
+		assert 'must-not-leak' not in evidence
+		assert len(evidence) <= 240
+		assert button.attributes['data-browser-use-camoufox-selector'] == '#submit'
+	finally:
+		await session.stop()
+
+
+@pytest.mark.anyio
 async def test_send_keys_types_printable_words_but_presses_special_keys(tmp_path: Path):
 	fixture = tmp_path / 'keyboard.html'
 	fixture.write_text(

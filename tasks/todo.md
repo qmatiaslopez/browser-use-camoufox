@@ -72,7 +72,7 @@ IMPORTANT: When a task is fully completed and its Verify command passes, you mus
 
 ## Phase 3: Tool and Report Parity
 
-- [ ] Task 5: Align tool surfaces with generic observation
+- [x] Task 5: Align tool surfaces with generic observation
   - Acceptance:
     - [ ] `find_elements` includes standard observation attributes by default.
     - [ ] `find_elements` text output is normalized visible text.

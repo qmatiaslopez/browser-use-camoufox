@@ -243,6 +243,68 @@ async def test_search_and_find_share_visible_text_normalization_and_safe_attribu
 
 
 @pytest.mark.anyio
+async def test_search_and_find_include_bounded_element_evidence(tmp_path: Path):
+	fixture = tmp_path / 'element-evidence.html'
+	fixture.write_text(
+		"""
+		<html>
+			<body>
+				<main id="content">
+					<section class="results">
+						<a
+							class="result primary"
+							href="/safe-target"
+							data-testid="search-card"
+							data-session-token="must-not-leak"
+						>
+							Visible   Evidence
+							<span style="visibility: hidden">Hidden Evidence</span>
+						</a>
+					</section>
+				</main>
+			</body>
+		</html>
+		"""
+	)
+	session = CamoufoxSession(headless=True)
+	tools = Tools()
+	register_camoufox_tools(tools)
+
+	try:
+		await session.start()
+		await session.navigate_to(fixture.as_uri())
+
+		search_result = await tools.registry.execute_action(
+			'search_page',
+			{'pattern': 'Visible Evidence', 'css_scope': '#content', 'context_chars': 8},
+			browser_session=session,
+		)
+		find_result = await tools.registry.execute_action(
+			'find_elements',
+			{'selector': 'a.result', 'attributes': ['href', 'data-testid', 'data-session-token']},
+			browser_session=session,
+		)
+
+		assert search_result.error is None
+		assert 'section.results > a.result.primary' in search_result.extracted_content
+		assert 'href="/safe-target"' in search_result.extracted_content
+		assert 'data-testid="search-card"' in search_result.extracted_content
+		assert 'Hidden Evidence' not in search_result.extracted_content
+		assert 'data-session-token' not in search_result.extracted_content
+		assert 'must-not-leak' not in search_result.extracted_content
+		assert find_result.error is None
+		assert 'section.results > a.result.primary' in find_result.extracted_content
+		assert 'href="/safe-target"' in find_result.extracted_content
+		assert 'data-testid="search-card"' in find_result.extracted_content
+		assert '> Visible Evidence' in find_result.extracted_content
+		assert 'Hidden Evidence' not in find_result.extracted_content
+		assert 'data-session-token' not in find_result.extracted_content
+		assert 'must-not-leak' not in find_result.extracted_content
+	finally:
+		await session.stop()
+
+
+@pytest.mark.anyio
 async def test_evaluate_script_returns_json_for_structured_values(tmp_path: Path):
 	fixture = tmp_path / 'evaluate.html'
 	fixture.write_text('<html><body><p>Evaluate</p></body></html>')

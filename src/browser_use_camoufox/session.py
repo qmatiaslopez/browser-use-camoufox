@@ -585,6 +585,21 @@ class CamoufoxSession(BrowserSession):
 				const scope = args.cssScope ? document.querySelector(args.cssScope) : document.body;
 				if (!scope) return {error: `CSS scope selector not found: ${args.cssScope}`, matches: [], total: 0};
 				const normalizeVisibleText = (value) => (value || '').replace(/\\s+/g, ' ').trim();
+				const isSensitive = (name) => {
+					const normalized = String(name || '').toLowerCase();
+					return args.sensitiveMarkers.some((marker) => normalized.includes(marker));
+				};
+				const safeAttributesFor = (element) => {
+					const attributes = {};
+					for (const name of args.attributes || []) {
+						if (isSensitive(name)) continue;
+						const value = element.getAttribute(name);
+						if (value !== null) {
+							attributes[name] = normalizeVisibleText(value).slice(0, args.maxAttributeLength);
+						}
+					}
+					return attributes;
+				};
 				let fullText = '';
 				const nodeOffsets = [];
 				const collectSegments = (element) => {
@@ -604,7 +619,12 @@ class CamoufoxSession(BrowserSession):
 					const prefix = fullText ? ' ' : '';
 					const offset = fullText.length + prefix.length;
 					fullText += `${prefix}${text}`;
-					nodeOffsets.push({offset, length: text.length, path: pathFor(element)});
+					nodeOffsets.push({
+						offset,
+						length: text.length,
+						path: pathFor(element),
+						attributes: safeAttributesFor(element),
+					});
 				};
 				collectSegments(scope);
 				return {
@@ -627,7 +647,12 @@ class CamoufoxSession(BrowserSession):
 					return parts.join(' > ');
 				}
 			}""",
-			{'cssScope': params.css_scope},
+			{
+				'attributes': DEFAULT_FIND_ELEMENT_ATTRIBUTES,
+				'cssScope': params.css_scope,
+				'maxAttributeLength': MAX_SAFE_ATTRIBUTE_VALUE_LENGTH,
+				'sensitiveMarkers': list(SENSITIVE_ATTRIBUTE_MARKERS),
+			},
 		)
 		if data.get('error'):
 			return ActionResult(error=f'search_page: {data["error"]}')
@@ -650,8 +675,17 @@ class CamoufoxSession(BrowserSession):
 			start = max(0, match.start() - params.context_chars)
 			end = min(len(body_text), match.end() + params.context_chars)
 			context = f'{"..." if start > 0 else ""}{body_text[start:end]}{"..." if end < len(body_text) else ""}'
-			element_path = self._element_path_for_match(data['nodeOffsets'], match.start())
-			location = f' (in {element_path})' if element_path else ''
+			element = self._element_evidence_for_match(data['nodeOffsets'], match.start())
+			location_parts = []
+			if element.get('path'):
+				location_parts.append(f'in {element["path"]}')
+			if element.get('attributes'):
+				attrs = ' '.join(
+					f'{key}="{value}"' for key, value in cast(dict[str, str], element['attributes']).items()
+				)
+				if attrs:
+					location_parts.append(attrs)
+			location = f' ({"; ".join(location_parts)})' if location_parts else ''
 			lines.append(f'[{result_index}] {context}{location}')
 		if len(all_matches) > params.max_results:
 			lines.append(
@@ -687,7 +721,23 @@ class CamoufoxSession(BrowserSession):
 					tag: element.tagName.toLowerCase(),
 					text: normalizeText(rawText),
 					attributes,
+					path: pathFor(element),
 				};
+				function pathFor(element) {
+					const parts = [];
+					let current = element;
+					while (current && current !== document.body && current !== document) {
+						let desc = current.tagName ? current.tagName.toLowerCase() : '';
+						if (!desc) break;
+						if (current.id) desc += `#${current.id}`;
+						else if (typeof current.className === 'string' && current.className.trim()) {
+							desc += `.${current.className.trim().split(/\\s+/).slice(0, 2).join('.')}`;
+						}
+						parts.unshift(desc);
+						current = current.parentElement;
+					}
+					return parts.join(' > ');
+				}
 			})""",
 			{
 				'attributes': attributes,
@@ -701,7 +751,8 @@ class CamoufoxSession(BrowserSession):
 		for item in data:
 			attrs = ' '.join(f'{key}="{value}"' for key, value in item['attributes'].items() if value is not None)
 			text = f' {item["text"]}' if item['text'] else ''
-			lines.append(f'- <{item["tag"]} {attrs}>{text}'.rstrip())
+			path = f' path: {item["path"]}' if item.get('path') else ''
+			lines.append(f'- <{item["tag"]} {attrs}>{text}{path}'.rstrip())
 		return ActionResult(extracted_content='\n'.join(lines), long_term_memory=lines[0])
 
 	async def evaluate_script(self, code: str) -> ActionResult:
@@ -1067,11 +1118,11 @@ class CamoufoxSession(BrowserSession):
 		self._navigation_history.append(url)
 		self._navigation_history_index = len(self._navigation_history) - 1
 
-	def _element_path_for_match(self, node_offsets: list[dict[str, Any]], match_index: int) -> str:
+	def _element_evidence_for_match(self, node_offsets: list[dict[str, Any]], match_index: int) -> dict[str, Any]:
 		for node in node_offsets:
 			if node['offset'] <= match_index < node['offset'] + node['length']:
-				return str(node.get('path') or '')
-		return ''
+				return node
+		return {}
 
 	def _tab_target_id(self, index: int) -> str:
 		return f'camoufox-tab-{index:04d}'

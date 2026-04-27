@@ -167,14 +167,14 @@ IMPORTANT: When a task is fully completed and its verification commands pass, up
 
 ## Phase 5: Tool Surface Refinements
 
-- [ ] Task 10: Align `find_elements` and `search_page` evidence
+- [x] Task 10: Align `find_elements` and `search_page` evidence
   - Acceptance:
-    - [ ] `find_elements` and `search_page` use normalized visible text consistently.
-    - [ ] Tool outputs include useful safe attributes and element path/context.
-    - [ ] Hidden text remains excluded from visible text results.
-    - [ ] No-CDP tool boundary remains covered.
+    - [x] `find_elements` and `search_page` use normalized visible text consistently.
+    - [x] Tool outputs include useful safe attributes and element path/context.
+    - [x] Hidden text remains excluded from visible text results.
+    - [x] No-CDP tool boundary remains covered.
   - Verify:
-    - [ ] `uv run pytest -q tests/parity/test_search_extract_screenshot.py tests/integration/test_tools_no_cdp.py`
+    - [x] `uv run pytest -q tests/parity/test_search_extract_screenshot.py tests/integration/test_tools_no_cdp.py`
   - Dependencies: Tasks 2 and 3
   - Files:
     - `src/browser_use_camoufox/session.py`

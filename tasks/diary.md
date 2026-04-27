@@ -18,3 +18,5 @@
 - Added regression coverage for newline text typing, key chords, and ambiguous key diagnostics; focused Task 8 validators, full pytest, ruff, pyright, and package build pass.
 - Completed Task 9: keyboard-only press actions now prepare focus on generic application/main/canvas/app-root targets when no editable element is active and record bounded active-element diagnostics before and after.
 - Added generic app focus regression coverage; focused Task 9 validator, full pytest, ruff, pyright, and package build pass.
+- Completed Task 10: `search_page` and `find_elements` now include normalized visible text evidence with safe attributes and generic element paths/context while continuing to exclude hidden text and sensitive attributes.
+- Added bounded tool evidence regression coverage; focused Task 10 validator, full pytest, ruff, pyright, and package build pass.

@@ -155,14 +155,14 @@ IMPORTANT: When a task is fully completed and its verification commands pass, up
     - `scripts/real_world_kit.py`
     - `tests/parity/test_chrome_camoufox_dom_parity.py`
 
-- [ ] Task 10: Run targeted real-site regression loop
+- [x] Task 10: Run targeted real-site regression loop
   - Acceptance:
-    - [ ] `mdn_related_api_flow`, `imdb_title_lookup`, `ebay_product_filter`, and `booking_destination_search` are re-run under Camoufox.
-    - [ ] Any remaining failure is classified with runtime/model/site/verifier ownership.
-    - [ ] Generated artifacts remain unstaged.
+    - [x] `mdn_related_api_flow`, `imdb_title_lookup`, `ebay_product_filter`, and `booking_destination_search` are re-run under Camoufox.
+    - [x] Any remaining failure is classified with runtime/model/site/verifier ownership.
+    - [x] Generated artifacts remain unstaged.
   - Verify:
-    - [ ] `xvfb-run -a uv run python scripts/real_world_kit.py --runtime camoufox --mission mdn_related_api_flow --mission imdb_title_lookup --mission ebay_product_filter --mission booking_destination_search --headless --pause-after-task 0 --report-path artifacts/real_world_kit/targeted-camoufox/report.json`
-    - [ ] `git status --short`
+    - [x] `xvfb-run -a uv run python scripts/real_world_kit.py --runtime camoufox --mission mdn_related_api_flow --mission imdb_title_lookup --mission ebay_product_filter --mission booking_destination_search --headless --pause-after-task 0 --report-path artifacts/real_world_kit/targeted-camoufox/report.json`
+    - [x] `git status --short`
   - Dependencies: Task 9
   - Files:
     - Generated files only under ignored `artifacts/real_world_kit/`

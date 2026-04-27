@@ -89,3 +89,6 @@
   - `uv run pyright`
   - `uv run pytest -q`
   - `uv build`
+- Completed Task 10 targeted Camoufox regression loop for `mdn_related_api_flow`, `imdb_title_lookup`, `ebay_product_filter`, and `booking_destination_search`; report generated under ignored `artifacts/real_world_kit/targeted-camoufox/report.json`.
+- Task 10 results: MDN, IMDb, and Booking passed; eBay failed with `model/navigation` ownership because the agent reached filtered wireless mouse results but finished unsuccessfully after not grounding a visible first-listing price, while runtime/tool diagnostics were preserved in the report.
+- `git status --short` confirmed generated artifacts remained unstaged; only pre-existing tracked task/spec documentation changes are visible.

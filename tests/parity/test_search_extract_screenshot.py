@@ -153,14 +153,15 @@ async def test_get_html_returns_selected_outer_html_without_cdp(tmp_path: Path):
 
 
 @pytest.mark.anyio
-async def test_find_elements_defaults_include_state_and_text_content(tmp_path: Path):
+async def test_find_elements_defaults_include_state_and_visible_text(tmp_path: Path):
 	fixture = tmp_path / 'find-elements.html'
 	fixture.write_text(
 		"""
 		<html>
 			<body>
-				<div data-testid="tile" data-state="present" aria-label="A present">
+				<div data-testid="state-card" data-state="present" aria-label="A present">
 					<span>A</span>
+					<span style="display: none">Hidden child</span>
 				</div>
 			</body>
 		</html>
@@ -175,13 +176,68 @@ async def test_find_elements_defaults_include_state_and_text_content(tmp_path: P
 		await session.navigate_to(fixture.as_uri())
 
 		result = await tools.registry.execute_action(
-			'find_elements', {'selector': '[data-testid="tile"]'}, browser_session=session
+			'find_elements', {'selector': '[data-testid="state-card"]'}, browser_session=session
 		)
 
 		assert result.error is None
 		assert 'data-state="present"' in result.extracted_content
 		assert 'aria-label="A present"' in result.extracted_content
 		assert '> A' in result.extracted_content
+		assert 'Hidden child' not in result.extracted_content
+	finally:
+		await session.stop()
+
+
+@pytest.mark.anyio
+async def test_search_and_find_share_visible_text_normalization_and_safe_attributes(tmp_path: Path):
+	fixture = tmp_path / 'normalized-safe.html'
+	fixture.write_text(
+		"""
+		<html>
+			<body>
+				<main id="content">
+					<div
+						data-testid="safe-card"
+						data-token="sample-value"
+						data-description="Alpha   Beta"
+						aria-label="Card label"
+					>
+						<span>Alpha</span>
+						<span style="display: none">Hidden Secret</span>
+						<span>Beta</span>
+					</div>
+				</main>
+			</body>
+		</html>
+		"""
+	)
+	session = CamoufoxSession(headless=True)
+	tools = Tools()
+	register_camoufox_tools(tools)
+
+	try:
+		await session.start()
+		await session.navigate_to(fixture.as_uri())
+
+		search_result = await tools.registry.execute_action(
+			'search_page',
+			{'pattern': 'Alpha Beta', 'css_scope': '#content', 'context_chars': 12},
+			browser_session=session,
+		)
+		find_result = await tools.registry.execute_action(
+			'find_elements',
+			{'selector': '[data-testid="safe-card"]', 'attributes': ['data-token', 'data-description']},
+			browser_session=session,
+		)
+
+		assert search_result.error is None
+		assert 'Found 1 match' in search_result.extracted_content
+		assert 'Hidden Secret' not in search_result.extracted_content
+		assert find_result.error is None
+		assert '> Alpha Beta' in find_result.extracted_content
+		assert 'Hidden Secret' not in find_result.extracted_content
+		assert 'data-token' not in find_result.extracted_content
+		assert 'data-description="Alpha Beta"' in find_result.extracted_content
 	finally:
 		await session.stop()
 

@@ -18,16 +18,16 @@ IMPORTANT: When a task is fully completed and its verification commands pass, up
     - `scripts/real_world_kit.py`
     - `tests/parity/test_chrome_camoufox_dom_parity.py`
 
-- [ ] Task 2: Add shared text, attribute, and selector metadata helpers
+- [x] Task 2: Add shared text, attribute, and selector metadata helpers
   - Acceptance:
-    - [ ] DOM observation, `search_page`, and `find_elements` use consistent visible text normalization.
-    - [ ] Attribute capture is bounded and skips or redacts sensitive-looking values.
-    - [ ] Selector metadata remains stable across ordinals, frames, and open shadow roots.
-    - [ ] Disabled and observable-only action boundaries remain intact.
+    - [x] DOM observation, `search_page`, and `find_elements` use consistent visible text normalization.
+    - [x] Attribute capture is bounded and skips or redacts sensitive-looking values.
+    - [x] Selector metadata remains stable across ordinals, frames, and open shadow roots.
+    - [x] Disabled and observable-only action boundaries remain intact.
   - Verify:
-    - [ ] `uv run pytest -q tests/integration/test_dom_selector_reliability.py`
-    - [ ] `uv run pytest -q tests/parity/test_search_extract_screenshot.py`
-    - [ ] `uv run pyright`
+    - [x] `uv run pytest -q tests/integration/test_dom_selector_reliability.py`
+    - [x] `uv run pytest -q tests/parity/test_search_extract_screenshot.py`
+    - [x] `uv run pyright`
   - Dependencies: Task 1
   - Files:
     - `src/browser_use_camoufox/session.py`

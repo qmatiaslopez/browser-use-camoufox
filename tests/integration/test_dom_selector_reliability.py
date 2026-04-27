@@ -39,11 +39,17 @@ async def test_selector_map_uses_stable_ordinals_and_metadata(tmp_path: Path):
 		)
 		assert disabled.attributes['disabled'] == ''
 		assert disabled.attributes['data-browser-use-camoufox-disabled'] == 'true'
+		assert disabled.attributes['data-browser-use-camoufox-observable'] == 'true'
+		assert disabled.snapshot_node is not None
+		assert disabled.snapshot_node.is_clickable is False
 		assert not any(node.attributes.get('id') == 'hidden' for node in state.dom_state.selector_map.values())
 
 		await session.event_bus.dispatch(ClickElementEvent(node=choices[1]))
 		page = await session.get_current_page()
 		assert await page.locator('button').nth(1).text_content() == 'Second clicked'
+
+		with pytest.raises(RuntimeError, match='disabled and cannot be clicked'):
+			await session.on_ClickElementEvent(ClickElementEvent(node=disabled))
 	finally:
 		await session.stop()
 
@@ -77,16 +83,16 @@ async def test_send_keys_types_printable_words_but_presses_special_keys(tmp_path
 
 
 @pytest.mark.anyio
-async def test_wordle_like_tiles_are_observable_with_state_and_labels(tmp_path: Path):
-	fixture = tmp_path / 'wordle.html'
+async def test_state_grid_cells_are_observable_with_state_and_labels(tmp_path: Path):
+	fixture = tmp_path / 'state-grid.html'
 	fixture.write_text(
 		"""
 		<html>
 			<body>
 				<div id="board">
-					<div data-testid="tile" data-state="correct" aria-label="G correct">G</div>
-					<div data-testid="tile" data-state="present" aria-label="L present">L</div>
-					<div data-testid="tile" data-state="absent" aria-label="O absent">O</div>
+					<div data-testid="state-cell" data-state="accepted" aria-label="Alpha accepted">A</div>
+					<div data-testid="state-cell" data-state="pending" aria-label="Beta pending">B</div>
+					<div data-testid="state-cell" data-state="rejected" aria-label="Gamma rejected">C</div>
 				</div>
 				<button id="enter">Enter</button>
 			</body>
@@ -102,15 +108,21 @@ async def test_wordle_like_tiles_are_observable_with_state_and_labels(tmp_path: 
 		await state_event
 		state = await state_event.event_result()
 
-		tiles = [node for node in state.dom_state.selector_map.values() if node.attributes.get('data-testid') == 'tile']
-		assert [tile.node_value for tile in tiles] == ['G', 'L', 'O']
-		assert [tile.attributes['data-state'] for tile in tiles] == ['correct', 'present', 'absent']
-		assert [tile.attributes['aria-label'] for tile in tiles] == ['G correct', 'L present', 'O absent']
-		assert all(tile.attributes['data-browser-use-camoufox-observable'] == 'true' for tile in tiles)
-		assert 'data-state=correct' in state.dom_state.llm_representation()
+		cells = [
+			node for node in state.dom_state.selector_map.values() if node.attributes.get('data-testid') == 'state-cell'
+		]
+		assert [cell.node_value for cell in cells] == ['A', 'B', 'C']
+		assert [cell.attributes['data-state'] for cell in cells] == ['accepted', 'pending', 'rejected']
+		assert [cell.attributes['aria-label'] for cell in cells] == [
+			'Alpha accepted',
+			'Beta pending',
+			'Gamma rejected',
+		]
+		assert all(cell.attributes['data-browser-use-camoufox-observable'] == 'true' for cell in cells)
+		assert 'data-state=accepted' in state.dom_state.llm_representation()
 
 		with pytest.raises(RuntimeError, match='observable but not clickable'):
-			await session.on_ClickElementEvent(ClickElementEvent(node=tiles[0]))
+			await session.on_ClickElementEvent(ClickElementEvent(node=cells[0]))
 	finally:
 		await session.stop()
 

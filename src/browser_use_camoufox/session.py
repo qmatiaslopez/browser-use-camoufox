@@ -81,6 +81,22 @@ DEFAULT_FIND_ELEMENT_ATTRIBUTES = [
 	'data-state',
 ]
 OBSERVABLE_ELEMENT_ATTRIBUTE = 'data-browser-use-camoufox-observable'
+REDACTED_ATTRIBUTE_VALUE = '[redacted]'
+MAX_SAFE_ATTRIBUTE_VALUE_LENGTH = 120
+SENSITIVE_ATTRIBUTE_MARKERS = (
+	'api-key',
+	'apikey',
+	'auth',
+	'cookie',
+	'csrf',
+	'jwt',
+	'key',
+	'nonce',
+	'password',
+	'secret',
+	'session',
+	'token',
+)
 CLICK_TIMEOUT_MS = 5_000
 PLAYWRIGHT_SPECIAL_KEYS = frozenset(
 	{
@@ -425,6 +441,8 @@ class CamoufoxSession(BrowserSession):
 	async def on_ClickElementEvent(self, event: ClickElementEvent) -> dict[str, Any] | None:
 		if event.node.attributes.get('type') == 'file':
 			raise RuntimeError('File inputs require upload support; use the upload-file compatibility path instead.')
+		if event.node.attributes.get('data-browser-use-camoufox-disabled') == 'true':
+			raise RuntimeError(f'Element {event.node.node_id} is disabled and cannot be clicked.')
 		if event.node.attributes.get(OBSERVABLE_ELEMENT_ATTRIBUTE) == 'true':
 			raise RuntimeError(
 				f'Element {event.node.node_id} is observable but not clickable. '
@@ -444,6 +462,8 @@ class CamoufoxSession(BrowserSession):
 	async def on_TypeTextEvent(self, event: TypeTextEvent) -> dict[str, Any] | None:
 		if event.node.attributes.get('type') == 'file':
 			raise RuntimeError('File inputs require upload support; use the upload-file compatibility path instead.')
+		if event.node.attributes.get('data-browser-use-camoufox-disabled') == 'true':
+			raise RuntimeError(f'Element {event.node.node_id} is disabled and cannot be edited.')
 		if event.node.attributes.get(OBSERVABLE_ELEMENT_ATTRIBUTE) == 'true':
 			raise RuntimeError(
 				f'Element {event.node.node_id} is observable but not editable. '
@@ -540,24 +560,32 @@ class CamoufoxSession(BrowserSession):
 			"""(args) => {
 				const scope = args.cssScope ? document.querySelector(args.cssScope) : document.body;
 				if (!scope) return {error: `CSS scope selector not found: ${args.cssScope}`, matches: [], total: 0};
-				const walker = document.createTreeWalker(scope, NodeFilter.SHOW_TEXT);
+				const normalizeVisibleText = (value) => (value || '').replace(/\\s+/g, ' ').trim();
 				let fullText = '';
 				const nodeOffsets = [];
-				while (walker.nextNode()) {
-					const node = walker.currentNode;
-					const text = node.textContent || '';
-					if (text.trim()) {
-						nodeOffsets.push({offset: fullText.length, length: text.length, node});
-						fullText += text;
+				const collectSegments = (element) => {
+					if (!element) return;
+					const style = window.getComputedStyle(element);
+					if (style.visibility === 'hidden' || style.display === 'none') return;
+					const childElements = Array.from(element.children).filter((child) => {
+						const childStyle = window.getComputedStyle(child);
+						return childStyle.visibility !== 'hidden' && childStyle.display !== 'none';
+					});
+					if (childElements.length) {
+						for (const child of childElements) collectSegments(child);
+						return;
 					}
-				}
+					const text = normalizeVisibleText(element.innerText);
+					if (!text) return;
+					const prefix = fullText ? ' ' : '';
+					const offset = fullText.length + prefix.length;
+					fullText += `${prefix}${text}`;
+					nodeOffsets.push({offset, length: text.length, path: pathFor(element)});
+				};
+				collectSegments(scope);
 				return {
 					fullText,
-					nodeOffsets: nodeOffsets.map(({offset, length, node}) => ({
-						offset,
-						length,
-						path: pathFor(node.parentElement),
-					})),
+					nodeOffsets,
 				};
 				function pathFor(element) {
 					const parts = [];
@@ -616,18 +644,34 @@ class CamoufoxSession(BrowserSession):
 		attributes = params.attributes if params.attributes is not None else DEFAULT_FIND_ELEMENT_ATTRIBUTES
 		data = await page.locator(params.selector).evaluate_all(
 			"""(elements, args) => elements.slice(0, args.maxResults).map((element) => {
+				const sensitiveMarkers = args.sensitiveMarkers || [];
+				const normalizeText = (value) => (value || '').replace(/\\s+/g, ' ').trim();
+				const isSensitive = (name) => {
+					const normalized = String(name || '').toLowerCase();
+					return sensitiveMarkers.some((marker) => normalized.includes(marker));
+				};
 				const attributes = {};
-				for (const name of args.attributes || []) attributes[name] = element.getAttribute(name);
+				for (const name of args.attributes || []) {
+					if (isSensitive(name)) continue;
+					const value = element.getAttribute(name);
+					if (value !== null) attributes[name] = normalizeText(value).slice(0, args.maxAttributeLength);
+				}
 				const rawText = args.includeText
-					? (element.textContent || element.innerText || element.value || '')
+					? (element.innerText || element.value || element.getAttribute('aria-label') || '')
 					: '';
 				return {
 					tag: element.tagName.toLowerCase(),
-					text: rawText.replace(/\\s+/g, ' ').trim(),
+					text: normalizeText(rawText),
 					attributes,
 				};
 			})""",
-			{'attributes': attributes, 'includeText': params.include_text, 'maxResults': params.max_results},
+			{
+				'attributes': attributes,
+				'includeText': params.include_text,
+				'maxAttributeLength': MAX_SAFE_ATTRIBUTE_VALUE_LENGTH,
+				'maxResults': params.max_results,
+				'sensitiveMarkers': list(SENSITIVE_ATTRIBUTE_MARKERS),
+			},
 		)
 		lines = [f'Found {len(data)} elements matching "{params.selector}":']
 		for item in data:
@@ -1266,6 +1310,16 @@ class CamoufoxSession(BrowserSession):
 					'aria-label', 'aria-expanded', 'aria-checked', 'aria-selected', 'aria-disabled',
 					'disabled', 'readonly', 'required', 'contenteditable', 'tabindex',
 				];
+				const sensitiveAttributeMarkers = args.sensitiveAttributeMarkers || [];
+				const normalizeText = (value) => (value || '').replace(/\\s+/g, ' ').trim();
+				const isSensitiveAttribute = (name) => {
+					const normalized = String(name || '').toLowerCase();
+					return sensitiveAttributeMarkers.some((marker) => normalized.includes(marker));
+				};
+				const safeAttributeValue = (name, value) => {
+					if (isSensitiveAttribute(name)) return null;
+					return normalizeText(value).slice(0, args.maxAttributeValueLength);
+				};
 				const semanticTags = new Set([
 					'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'li', 'dt', 'dd', 'summary', 'figcaption',
 					'blockquote', 'caption', 'td', 'th',
@@ -1297,26 +1351,31 @@ class CamoufoxSession(BrowserSession):
 					const style = window.getComputedStyle(element);
 					const attributes = {};
 					for (const name of attributeNames) {
-						if (element.hasAttribute(name)) attributes[name] = element.getAttribute(name) || '';
+						if (element.hasAttribute(name)) {
+							const value = safeAttributeValue(name, element.getAttribute(name) || '');
+							if (value !== null) attributes[name] = value;
+						}
 					}
 					for (const attr of Array.from(element.attributes)) {
+						const value = safeAttributeValue(attr.name, attr.value);
 						if (
+							value !== null
+							&&
 							attr.name.startsWith('data-')
 							&& attr.name.length <= 40
 							&& attr.value.length <= 120
 							&& Object.keys(attributes).filter((name) => name.startsWith('data-')).length < 8
 						) {
-							attributes[attr.name] = attr.value;
+							attributes[attr.name] = value;
 						}
 					}
 					const disabled = element.disabled === true || element.getAttribute('aria-disabled') === 'true';
 					const visible = rect.width > 0 && rect.height > 0
 						&& style.visibility !== 'hidden' && style.display !== 'none';
-					const text = (
-						element.textContent || element.innerText || element.value
-						|| element.getAttribute('aria-label') || ''
+					const text = normalizeText(
+						element.innerText || element.value || element.getAttribute('aria-label') || ''
 					)
-						.replace(/\\s+/g, ' ').trim().slice(0, 200);
+						.slice(0, 200);
 					const role = element.getAttribute('role') || '';
 					const hasObservableState = Object.keys(attributes).some((name) => (
 						name.startsWith('aria-') || name.startsWith('data-')
@@ -1334,7 +1393,7 @@ class CamoufoxSession(BrowserSession):
 						tagName: element.nodeName,
 						text,
 						attributes, selector: stableSelector, ordinal, is_visible: visible, is_disabled: disabled,
-						is_interactive: isInteractive, is_observable: isObservable,
+						is_interactive: isInteractive && !disabled, is_observable: isObservable,
 						frame_id: args.frameId, frame_url: args.frameUrl,
 						shadow_root_type: shadowRootType,
 						rect: {x: rect.x, y: rect.y, width: rect.width, height: rect.height},
@@ -1360,6 +1419,8 @@ class CamoufoxSession(BrowserSession):
 				{
 					'frameId': 'main' if frame == page.main_frame else f'frame-{frame_index}',
 					'frameUrl': '' if frame == page.main_frame else frame.url,
+					'maxAttributeValueLength': MAX_SAFE_ATTRIBUTE_VALUE_LENGTH,
+					'sensitiveAttributeMarkers': list(SENSITIVE_ATTRIBUTE_MARKERS),
 				},
 			)
 			if isinstance(frame_elements, list):
@@ -1410,7 +1471,7 @@ class CamoufoxSession(BrowserSession):
 			children_nodes=None,
 			ax_node=None,
 			snapshot_node=EnhancedSnapshotNode(
-				is_clickable=bool(payload.get('is_interactive', True)),
+				is_clickable=bool(payload.get('is_interactive', True)) and not bool(payload.get('is_disabled', False)),
 				cursor_style=None,
 				bounds=bounds,
 				clientRects=bounds,

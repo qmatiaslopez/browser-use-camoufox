@@ -11,3 +11,4 @@
 - Initial headed mission run failed because no DISPLAY was available in WSL; reran with xvfb-run.
 - Re-verified `uv run ruff check src tests scripts`, `uv run ruff format --check src tests scripts`, `uv run pyright`, `uv run pytest -q`, and `uv build` pass.
 - Completed Task 8 final validation and cleanup: lint, format check, pyright, full pytest suite, and build all passed; git status shows only coordination/spec files untracked, with no generated artifacts staged.
+- Backfilled Task 1 and Task 2 status after confirming the generic parity fixture and DOM observation contract are covered in `tests/parity/test_chrome_camoufox_dom_parity.py`; `uv run pytest -q tests/parity` and `uv build` pass.

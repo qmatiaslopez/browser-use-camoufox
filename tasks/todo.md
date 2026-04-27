@@ -4,7 +4,7 @@ IMPORTANT: When a task is fully completed and its Verify command passes, you mus
 
 ## Phase 1: Diagnostic Foundation
 
-- [ ] Task 1: Add generic Chrome-vs-Camoufox fixture comparison
+- [x] Task 1: Add generic Chrome-vs-Camoufox fixture comparison
   - Acceptance:
     - [ ] Fixture contains no Wordle names, answer terms, or site-specific selectors.
     - [ ] Comparison reports visible text, attributes, interactive indexes, and non-actionable observable nodes.
@@ -15,7 +15,7 @@ IMPORTANT: When a task is fully completed and its Verify command passes, you mus
   - Files:
     - `tests/parity/test_chrome_camoufox_dom_parity.py`
 
-- [ ] Task 2: Define generic DOM observation contract
+- [x] Task 2: Define generic DOM observation contract
   - Acceptance:
     - [ ] Observable non-actionable nodes are asserted separately from clickable nodes.
     - [ ] Generic state examples include ARIA state and bounded `data-*`.

@@ -487,3 +487,102 @@ async def test_frame_detach_fixture_recreates_target_after_observed_action(tmp_p
 		assert await page.locator('body').get_attribute('data-clicked') == 'true'
 	finally:
 		await session.stop()
+
+
+@pytest.mark.anyio
+async def test_nested_scroll_container_exposes_offscreen_target_for_recovery(tmp_path: Path):
+	fixture = tmp_path / 'nested-scroll.html'
+	fixture.write_text(
+		"""
+		<html>
+			<body>
+				<div
+					id="results-pane"
+					style="height: 120px; width: 320px; overflow: auto; border: 1px solid black"
+					aria-label="Results pane"
+				>
+					<div style="height: 420px"></div>
+					<button id="load-more" onclick="this.textContent='Loaded more results'">Load more results</button>
+				</div>
+			</body>
+		</html>
+		"""
+	)
+	session = CamoufoxSession(headless=True)
+
+	try:
+		await session.start()
+		await session.navigate_to(fixture.as_uri())
+		state_event = session.event_bus.dispatch(BrowserStateRequestEvent(include_dom=True, include_screenshot=False))
+		await state_event
+		state = await state_event.event_result()
+
+		button = next(
+			node for node in state.dom_state.selector_map.values() if node.attributes.get('id') == 'load-more'
+		)
+		evidence = button.attributes.get('data-browser-use-camoufox-semantic-evidence', '')
+		assert button.node_value == 'Load more results'
+		assert 'Load more results' in state.dom_state.llm_representation()
+		assert 'geometry=' in evidence
+	finally:
+		await session.stop()
+
+
+@pytest.mark.anyio
+async def test_visual_grid_and_keyboard_fixtures_expose_visible_state(tmp_path: Path):
+	fixture = tmp_path / 'visual-grid-keyboard.html'
+	fixture.write_text(
+		"""
+		<html>
+			<body>
+				<section id="board" aria-label="Letter board">
+					<div role="grid">
+						<div role="row">
+							<div role="gridcell" data-row="1" data-col="1" data-state="correct"
+								aria-label="A correct">A</div>
+							<div role="gridcell" data-row="1" data-col="2" data-state="present"
+								aria-label="B present">B</div>
+						</div>
+						<div role="row">
+							<div role="gridcell" data-row="2" data-col="1" data-state="absent"
+								aria-label="C absent">C</div>
+							<div role="gridcell" data-row="2" data-col="2" data-state="empty"
+								aria-label="D empty">D</div>
+						</div>
+					</div>
+				</section>
+				<section id="keyboard" aria-label="Keyboard">
+					<button data-key="A" data-state="correct">A</button>
+					<button data-key="B" data-state="present">B</button>
+					<button data-key="C" disabled data-state="absent">C</button>
+				</section>
+			</body>
+		</html>
+		"""
+	)
+	session = CamoufoxSession(headless=True)
+
+	try:
+		await session.start()
+		await session.navigate_to(fixture.as_uri())
+		state_event = session.event_bus.dispatch(BrowserStateRequestEvent(include_dom=True, include_screenshot=False))
+		await state_event
+		state = await state_event.event_result()
+
+		cells = [node for node in state.dom_state.selector_map.values() if node.attributes.get('role') == 'gridcell']
+		keys = [node for node in state.dom_state.selector_map.values() if node.attributes.get('data-key')]
+		assert [(cell.node_value, cell.attributes['data-state']) for cell in cells] == [
+			('A', 'correct'),
+			('B', 'present'),
+			('C', 'absent'),
+			('D', 'empty'),
+		]
+		assert [(key.node_value, key.attributes['data-state']) for key in keys] == [
+			('A', 'correct'),
+			('B', 'present'),
+			('C', 'absent'),
+		]
+		assert 'aria-label=A correct' in state.dom_state.llm_representation()
+		assert [key.attributes['data-key'] for key in keys] == ['A', 'B', 'C']
+	finally:
+		await session.stop()

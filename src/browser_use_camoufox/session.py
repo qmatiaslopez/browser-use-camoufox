@@ -791,10 +791,46 @@ class CamoufoxSession(BrowserSession):
 				const rawText = args.includeText
 					? (element.innerText || element.value || element.getAttribute('aria-label') || '')
 					: '';
+				const childEvidence = [];
+				const childSelectors = [
+					'a[href]', 'button', '[role="button"]', '[role="link"]', '[role="option"]',
+					'[data-state]', '[aria-label]', '[data-value]'
+				].join(', ');
+				for (const child of Array.from(element.querySelectorAll(childSelectors)).slice(0, 12)) {
+					const childStyle = window.getComputedStyle(child);
+					const childRect = child.getBoundingClientRect();
+					if (
+						childStyle.visibility === 'hidden'
+						|| childStyle.display === 'none'
+						|| childRect.width <= 0
+						|| childRect.height <= 0
+					) continue;
+					const childAttributes = {};
+					for (const name of args.attributes || []) {
+						if (isSensitive(name)) continue;
+						const value = child.getAttribute(name);
+						if (value !== null) {
+							childAttributes[name] = normalizeText(value).slice(0, args.maxAttributeLength);
+						}
+					}
+					for (const name of ['href', 'aria-label', 'data-value', 'data-state']) {
+						if (isSensitive(name) || childAttributes[name]) continue;
+						const value = child.getAttribute(name);
+						if (value !== null) {
+							childAttributes[name] = normalizeText(value).slice(0, args.maxAttributeLength);
+						}
+					}
+					childEvidence.push({
+						tag: child.tagName.toLowerCase(),
+						text: normalizeText(child.innerText || child.value || child.getAttribute('aria-label') || ''),
+						attributes: childAttributes,
+					});
+				}
 				return {
 					tag: element.tagName.toLowerCase(),
 					text: normalizeText(rawText),
 					attributes,
+					childEvidence,
 					path: pathFor(element),
 				};
 				function pathFor(element) {
@@ -827,6 +863,12 @@ class CamoufoxSession(BrowserSession):
 			text = f' {item["text"]}' if item['text'] else ''
 			path = f' path: {item["path"]}' if item.get('path') else ''
 			lines.append(f'- <{item["tag"]} {attrs}>{text}{path}'.rstrip())
+			for child in item.get('childEvidence') or []:
+				child_attrs = ' '.join(
+					f'{key}="{value}"' for key, value in child['attributes'].items() if value is not None
+				)
+				child_text = f' {child["text"]}' if child.get('text') else ''
+				lines.append(f'  - <{child["tag"]} {child_attrs}>{child_text}'.rstrip())
 		return ActionResult(extracted_content='\n'.join(lines), long_term_memory=lines[0])
 
 	async def evaluate_script(self, code: str) -> ActionResult:
@@ -1584,9 +1626,13 @@ class CamoufoxSession(BrowserSession):
 			return 0
 		if original.node_value.strip() and original.node_value.strip() == candidate.node_value.strip():
 			score += 10
-		if original.attributes.get(SEMANTIC_EVIDENCE_ATTRIBUTE) and original.attributes.get(
-			SEMANTIC_EVIDENCE_ATTRIBUTE
-		) == candidate.attributes.get(SEMANTIC_EVIDENCE_ATTRIBUTE):
+		original_evidence = self._semantic_evidence_without_geometry(
+			original.attributes.get(SEMANTIC_EVIDENCE_ATTRIBUTE)
+		)
+		candidate_evidence = self._semantic_evidence_without_geometry(
+			candidate.attributes.get(SEMANTIC_EVIDENCE_ATTRIBUTE)
+		)
+		if original_evidence and original_evidence == candidate_evidence:
 			score += 8
 		for name, weight in (
 			('href', 20),
@@ -1613,6 +1659,11 @@ class CamoufoxSession(BrowserSession):
 	def _safe_node_evidence(self, node: EnhancedDOMTreeNode) -> str:
 		evidence = node.attributes.get(SEMANTIC_EVIDENCE_ATTRIBUTE) or node.node_value.strip()
 		return re.sub(r'\s+', ' ', evidence).strip()[:MAX_SEMANTIC_EVIDENCE_LENGTH]
+
+	def _semantic_evidence_without_geometry(self, evidence: str | None) -> str:
+		if not evidence:
+			return ''
+		return '; '.join(part for part in evidence.split('; ') if not part.startswith('geometry='))
 
 	def _candidate_ranking_diagnostics(self, scored_matches: list[tuple[EnhancedDOMTreeNode, int]]) -> str:
 		candidates = [
@@ -1981,7 +2032,7 @@ class CamoufoxSession(BrowserSession):
 					return sensitiveAttributeMarkers.some((marker) => normalized.includes(marker));
 				};
 				const safeAttributeValue = (name, value) => {
-					if (isSensitiveAttribute(name)) return null;
+					if (name !== 'data-key' && isSensitiveAttribute(name)) return null;
 					return normalizeText(value).slice(0, args.maxAttributeValueLength);
 				};
 				const semanticTags = new Set([
@@ -1992,6 +2043,10 @@ class CamoufoxSession(BrowserSession):
 					'alert', 'article', 'cell', 'columnheader', 'gridcell', 'heading', 'note', 'rowheader',
 					'status', 'tabpanel', 'main', 'list', 'grid', 'table', 'region',
 				]);
+				const nonAriaSuggestionSelector = [
+					'[class*="suggest" i]', '[class*="option" i]', '[class*="result" i]',
+					'[data-value]', '[data-key]'
+				].join(', ');
 				const centralContainers = [
 					'main', '[role="main"]', 'article', '[role="article"]', '[role="list"]',
 					'ul', 'ol', '[role="grid"]', 'table',
@@ -2005,8 +2060,15 @@ class CamoufoxSession(BrowserSession):
 					const tagName = element.tagName.toLowerCase();
 					const inCentralContent = Boolean(element.closest(centralContainers));
 					const inRepeatedChrome = Boolean(element.closest(repeatedChromeContainers));
-					const isInteractive = selectorList.some((candidate) => element.matches(candidate));
-					const matchedSelector = selectorList.find((candidate) => element.matches(candidate)) || tagName;
+					const looksLikeClickable = tagName === 'button'
+						|| tagName === 'a'
+						|| element.hasAttribute('onclick')
+						|| window.getComputedStyle(element).cursor === 'pointer'
+						|| Boolean(element.closest('[class*="suggest" i], [class*="option" i]'));
+					const isInteractive = selectorList.some((candidate) => element.matches(candidate))
+						|| (element.matches(nonAriaSuggestionSelector) && looksLikeClickable);
+					const matchedSelector = selectorList.find((candidate) => element.matches(candidate))
+						|| (element.matches(nonAriaSuggestionSelector) ? nonAriaSuggestionSelector : tagName);
 					let stableSelector = matchedSelector;
 					if (element.id) {
 						stableSelector = `#${CSS.escape(element.id)}`;
@@ -2037,7 +2099,13 @@ class CamoufoxSession(BrowserSession):
 							attr.name.startsWith('data-')
 							&& attr.name.length <= 40
 							&& attr.value.length <= 120
-							&& Object.keys(attributes).filter((name) => name.startsWith('data-')).length < 8
+							&& (
+								attr.name === 'data-key'
+								|| attr.name.startsWith('data-browser-use-camoufox-')
+								|| Object.keys(attributes).filter((name) => (
+									name.startsWith('data-') && !name.startsWith('data-browser-use-camoufox-')
+								)).length < 8
+							)
 						) {
 							attributes[attr.name] = value;
 						}
@@ -2062,6 +2130,11 @@ class CamoufoxSession(BrowserSession):
 							|| element.getAttribute('aria-label')
 						)
 					);
+					const geometry = [
+						`${Math.round(rect.x)},${Math.round(rect.y)}`,
+						`${Math.round(rect.width)}x${Math.round(rect.height)}`,
+					].join(',');
+					attributes['data-browser-use-camoufox-geometry'] = geometry;
 					return {
 						tagName: element.nodeName,
 						text,
@@ -2137,6 +2210,9 @@ class CamoufoxSession(BrowserSession):
 			value = attributes.get(name)
 			if value:
 				parts.append(f'{name}={value}')
+		geometry = attributes.get('data-browser-use-camoufox-geometry')
+		if geometry:
+			parts.append(f'geometry={geometry}')
 		evidence = '; '.join(parts)
 		if len(evidence) <= MAX_SEMANTIC_EVIDENCE_LENGTH:
 			return evidence

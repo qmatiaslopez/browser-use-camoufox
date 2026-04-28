@@ -359,3 +359,88 @@ async def test_click_rejects_ambiguous_autocomplete_option_recovery(tmp_path: Pa
 		assert await page.locator('#result').text_content() == 'Waiting'
 	finally:
 		await session.stop()
+
+
+@pytest.mark.anyio
+async def test_state_includes_non_aria_autocomplete_suggestions(tmp_path: Path):
+	fixture = tmp_path / 'custom_autocomplete.html'
+	fixture.write_text(
+		"""
+		<html>
+			<body>
+				<label for="location">Location</label>
+				<input id="location" value="har" data-overlay="location-results" />
+				<div id="location-results" class="suggestion-panel">
+					<div class="suggestion" data-value="harbor">Harbor Center</div>
+					<div class="suggestion" data-value="harvest">Harvest Square</div>
+					<div class="suggestion" data-value="hidden" style="display:none">Hidden Place</div>
+				</div>
+			</body>
+		</html>
+		"""
+	)
+	session = CamoufoxSession(headless=True)
+
+	try:
+		await session.start()
+		await session.navigate_to(fixture.as_uri())
+		state_event = session.event_bus.dispatch(BrowserStateRequestEvent(include_dom=True, include_screenshot=False))
+		await state_event
+		state = await state_event.event_result()
+
+		suggestions = [
+			node for node in state.dom_state.selector_map.values() if node.attributes.get('class') == 'suggestion'
+		]
+		assert [suggestion.node_value for suggestion in suggestions] == ['Harbor Center', 'Harvest Square']
+		assert all(
+			suggestion.snapshot_node is not None and suggestion.snapshot_node.is_clickable for suggestion in suggestions
+		)
+		assert 'Hidden Place' not in state.dom_state.llm_representation()
+	finally:
+		await session.stop()
+
+
+@pytest.mark.anyio
+async def test_top_layer_intercepted_click_fixture_preserves_blocked_target(tmp_path: Path):
+	fixture = tmp_path / 'top_layer_intercept.html'
+	fixture.write_text(
+		"""
+		<html>
+			<body>
+				<button id="blocked" onclick="
+					if (event.detail > 0) document.body.dataset.clicked='true'
+				">Continue checkout</button>
+				<div
+					id="modal-backdrop"
+					role="dialog"
+					aria-label="Confirm before continuing"
+					onclick="event.stopPropagation()"
+					style="
+						position:fixed; left:0; top:0; width:100vw; height:100vh;
+						z-index:1000; background:rgba(0,0,0,.2); pointer-events:all
+					"
+				>
+					<button id="close">Review details</button>
+				</div>
+			</body>
+		</html>
+		"""
+	)
+	session = CamoufoxSession(headless=True)
+
+	try:
+		await session.start()
+		await session.navigate_to(fixture.as_uri())
+		state_event = session.event_bus.dispatch(BrowserStateRequestEvent(include_dom=True, include_screenshot=False))
+		await state_event
+		state = await state_event.event_result()
+		button = next(node for node in state.dom_state.selector_map.values() if node.attributes.get('id') == 'blocked')
+
+		with pytest.raises(RuntimeError, match='Camoufox click failed after 5000ms'):
+			await session.on_ClickElementEvent(ClickElementEvent(node=button))
+
+		page = await session.get_current_page()
+		assert await page.locator('body').get_attribute('data-clicked') is None
+		assert session.last_click_diagnostics is not None
+	finally:
+		await session.stop()

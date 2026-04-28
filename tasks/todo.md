@@ -1,179 +1,198 @@
-# Task List: Total Camoufox Runtime Robustness
+# Task List: General Camoufox Runtime Intelligence
 
 IMPORTANT: When a task is fully completed and its verification commands pass, update this file and change that task checkbox from `- [ ]` to `- [x]` before finishing.
 
-## Phase 1: Diagnostic Foundation
+## Phase 1: Foundation Fixtures and Model Contract
 
-- [x] Task 1: Add generic failing fixtures for remaining failure classes
+- [x] Task 1: Add generic fixtures for modern dynamic page classes
   - Acceptance:
-    - [x] Local fixtures reproduce ambiguity/timeouts/detach patterns generically.
-    - [x] Tests assert the desired behavior and fail before runtime fixes.
-    - [x] Fixture names and selectors are generic and do not mention MDN, IMDb, eBay, Booking, or Wordle.
+    - [x] Fixtures cover dense cards/listings, non-ARIA autocomplete, top-layer/intercepted clicks, nested scroll containers, and visual grids/keyboards.
+    - [x] Tests assert the desired generic evidence/action behavior and fail without the new capability.
+    - [x] Fixture names, text, selectors, and assertions do not mention public benchmark sites or mission IDs.
   - Verify:
-    - [x] `uv run pytest -q tests/integration/test_interaction_events.py tests/parity/test_stale_indexes.py`
+    - [x] `uv run pytest -q tests/integration/test_interaction_events.py tests/integration/test_dom_selector_reliability.py`
+    - [x] `uv run pytest -q tests/parity/test_search_extract_screenshot.py`
   - Dependencies: None
   - Files:
     - `tests/integration/test_interaction_events.py`
-    - `tests/parity/test_stale_indexes.py`
-    - `tests/integration/test_dom_selector_reliability.py`
-
-- [x] Task 2: Add semantic target evidence to DOM nodes
-  - Acceptance:
-    - [x] Every actionable node has a bounded semantic evidence payload.
-    - [x] Sensitive attributes remain omitted/redacted.
-    - [x] Output remains bounded and existing observable/actionable representation is preserved.
-  - Verify:
-    - [x] `uv run pytest -q tests/integration/test_dom_selector_reliability.py`
-    - [x] `uv run pytest -q tests/parity/test_search_extract_screenshot.py`
-  - Dependencies: Task 1
-  - Files:
-    - `src/browser_use_camoufox/session.py`
     - `tests/integration/test_dom_selector_reliability.py`
     - `tests/parity/test_search_extract_screenshot.py`
 
-## Checkpoint: Evidence Foundation
-
-- [ ] Focused tests for generic fixtures and semantic evidence pass.
-- [ ] Diff review confirms no public-site hardcoding and no CDP.
-- [ ] Human reviews failure-class fixtures before action fallback work begins.
-
-## Phase 2: Ranked Relocalization
-
-- [x] Task 3: Replace exact-signature relocalization with scored candidate ranking
+- [ ] Task 2: Define bounded semantic model helpers
   - Acceptance:
-    - [x] Repeated candidates can be resolved when one candidate clearly matches the original semantic evidence.
-    - [x] Ambiguous candidates remain blocked with score diagnostics.
-    - [x] Disabled and observable-only candidates are never selected.
+    - [ ] Evidence includes role/name/text/labels/owner/geometry/interactable state where available.
+    - [ ] Sensitive attributes and long text are redacted or bounded.
+    - [ ] Existing DOM selector behavior remains compatible with current tests.
   - Verify:
-    - [x] `uv run pytest -q tests/parity/test_stale_indexes.py`
-    - [x] `uv run pytest -q tests/integration/test_dom_selector_reliability.py`
-  - Dependencies: Task 2
+    - [ ] `uv run pytest -q tests/unit/test_diagnostics.py tests/integration/test_dom_selector_reliability.py`
+    - [ ] `uv run pytest -q tests/parity/test_chrome_camoufox_dom_parity.py`
+  - Dependencies: Task 1
   - Files:
     - `src/browser_use_camoufox/session.py`
-    - `tests/parity/test_stale_indexes.py`
+    - `tests/unit/test_diagnostics.py`
+    - `tests/integration/test_dom_selector_reliability.py`
+    - `tests/parity/test_chrome_camoufox_dom_parity.py`
+
+## Checkpoint: Model Foundation
+
+- [ ] Foundation fixtures fail for missing capabilities before implementation and pass after Task 2.
+- [ ] Existing selectors, ordinals, disabled boundaries, and observable-only boundaries still pass.
+- [ ] Diff review confirms no CDP, no BiDi, no public-site hardcoding.
+
+## Phase 2: Dense Content Understanding
+
+- [ ] Task 3: Implement grouped card/list extraction
+  - Acceptance:
+    - [ ] Generic dense-card fixture returns grouped units with title, primary link, price-like visible metadata, and actions.
+    - [ ] Output is compact, redacted, and bounded.
+    - [ ] Existing `find_elements`, `search_page`, and DOM parity tests continue to pass.
+  - Verify:
+    - [ ] `uv run pytest -q tests/parity/test_search_extract_screenshot.py tests/integration/test_dom_selector_reliability.py`
+    - [ ] Targeted run includes `ebay_product_filter` after implementation.
+  - Dependencies: Tasks 1-2
+  - Files:
+    - `src/browser_use_camoufox/session.py`
+    - `tests/parity/test_search_extract_screenshot.py`
     - `tests/integration/test_dom_selector_reliability.py`
 
-- [x] Task 4: Add candidate ranking diagnostics
+- [ ] Task 4: Add grouped evidence to action relocalization diagnostics
   - Acceptance:
-    - [x] Ambiguous relocalization errors include top candidate scores and safe evidence.
-    - [x] Diagnostics omit sensitive values and remain size-bounded.
-    - [x] Benchmark reports preserve these diagnostics under runtime/tool errors.
+    - [ ] Repeated-card fixture relocalizes the correct action using group context.
+    - [ ] Ambiguous repeated groups are rejected with ranked diagnostics.
+    - [ ] Diagnostics remain safe and size-bounded.
   - Verify:
-    - [x] `uv run pytest -q tests/parity/test_stale_indexes.py tests/parity/test_chrome_camoufox_dom_parity.py`
+    - [ ] `uv run pytest -q tests/parity/test_stale_indexes.py tests/integration/test_dom_selector_reliability.py`
   - Dependencies: Task 3
   - Files:
     - `src/browser_use_camoufox/session.py`
     - `tests/parity/test_stale_indexes.py`
-    - `tests/parity/test_chrome_camoufox_dom_parity.py`
+    - `tests/integration/test_dom_selector_reliability.py`
 
-## Checkpoint: Relocalization
+## Checkpoint: Dense Pages
 
-- [ ] Repeated-result fixture passes.
-- [ ] Existing stale-index and observable-only safety tests pass.
-- [ ] Ambiguity diagnostics are actionable and redacted.
+- [ ] Dense card/list fixtures pass.
+- [ ] Existing search/extract/relocalization tests pass.
+- [ ] `ebay_product_filter` targeted Camoufox run produces enough visible title/price evidence or passes.
 
-## Phase 3: Safe Click and Submit Recovery
+## Phase 3: General Action Planner and Overlay Recovery
 
-- [x] Task 5: Implement safe click fallback pipeline
+- [ ] Task 5: Introduce conservative action planner diagnostics
   - Acceptance:
-    - [x] Timeout-covered generic fixture succeeds when one safe target is clear.
-    - [x] Fallback refuses disabled/observable-only/ambiguous targets.
-    - [x] Fallback diagnostics record attempted path and final result.
+    - [ ] Existing click/keyboard/form/autocomplete/frame-detach behavior is represented as action-plan steps.
+    - [ ] Last-click diagnostics include strategy, preconditions, attempted steps, and classified no-change reason.
+    - [ ] No behavior regresses for current integration and parity tests.
   - Verify:
-    - [x] `uv run pytest -q tests/integration/test_interaction_events.py tests/parity/test_stale_indexes.py`
-  - Dependencies: Task 4
+    - [ ] `uv run pytest -q tests/integration/test_interaction_events.py tests/parity/test_stale_indexes.py tests/parity/test_iframe_dom.py`
+  - Dependencies: Tasks 1-2
   - Files:
     - `src/browser_use_camoufox/session.py`
     - `tests/integration/test_interaction_events.py`
     - `tests/parity/test_stale_indexes.py`
+    - `tests/parity/test_iframe_dom.py`
 
-- [x] Task 6: Add generic form/search submit fallback
+- [ ] Task 6: Implement non-ARIA overlay/autocomplete selection
   - Acceptance:
-    - [x] Generic search form fixture succeeds when the button click times out but form submit/Enter works.
-    - [x] Fallback requires a clear associated form/input and does not submit unrelated forms.
-    - [x] Diagnostics distinguish click fallback from form submit fallback.
+    - [ ] Generic non-ARIA autocomplete fixture selects the intended visible suggestion.
+    - [ ] Ambiguous or hidden suggestions are rejected with useful diagnostics.
+    - [ ] Existing ARIA listbox/menu option behavior continues to pass.
   - Verify:
-    - [x] `uv run pytest -q tests/integration/test_interaction_events.py tests/integration/test_dom_selector_reliability.py`
+    - [ ] `uv run pytest -q tests/integration/test_interaction_events.py tests/parity/test_forms_dropdown_upload.py`
+    - [ ] Targeted run includes `booking_destination_search` after implementation.
+  - Dependencies: Task 5
+  - Files:
+    - `src/browser_use_camoufox/session.py`
+    - `tests/integration/test_interaction_events.py`
+    - `tests/parity/test_forms_dropdown_upload.py`
+
+- [ ] Task 7: Add hit-target, top-layer, and scroll-container recovery
+  - Acceptance:
+    - [ ] Intercepted/top-layer fixture classifies the blocker and avoids unsafe clicks.
+    - [ ] Nested scroll-container fixture scrolls the correct container and clicks the intended target.
+    - [ ] Safe coordinate click validates the hit target before use.
+  - Verify:
+    - [ ] `uv run pytest -q tests/integration/test_interaction_events.py tests/integration/test_dom_selector_reliability.py`
   - Dependencies: Task 5
   - Files:
     - `src/browser_use_camoufox/session.py`
     - `tests/integration/test_interaction_events.py`
     - `tests/integration/test_dom_selector_reliability.py`
 
-## Checkpoint: Click/Search Recovery
+## Checkpoint: Action Recovery
 
-- [ ] MDN-like generic fixture passes.
-- [ ] Click fallback does not regress disabled/observable-only boundaries.
-- [ ] Run affected benchmark task: `mdn_related_api_flow` under Camoufox.
+- [ ] Existing click, keyboard, form, autocomplete, iframe, and scroll tests pass.
+- [ ] `booking_destination_search` targeted Camoufox run passes or fails only as model/navigation with clear non-runtime diagnostics.
+- [ ] No fallback force-clicks ambiguous, disabled, hidden, or observable-only nodes.
 
-## Phase 4: Autocomplete and Dynamic Frame Recovery
+## Phase 4: Visual Grid and Virtual Keyboard Intelligence
 
-- [x] Task 7: Add generic autocomplete/listbox option selection recovery
+- [ ] Task 8: Detect and expose compact grid state
   - Acceptance:
-    - [x] Generic autocomplete fixture selects the intended visible option.
-    - [x] Ambiguous suggestions are rejected with ranked diagnostics.
-    - [x] Works for ARIA listbox/menu/option patterns without site-specific selectors.
+    - [ ] Generic grid fixture produces a compact grid summary with rows, columns, cell labels/text, and states.
+    - [ ] Hidden or offscreen cells are not incorrectly reported as visible.
+    - [ ] Output is bounded and does not read hidden app state or private data.
   - Verify:
-    - [x] `uv run pytest -q tests/integration/test_interaction_events.py tests/parity/test_forms_dropdown_upload.py`
-  - Dependencies: Task 6
+    - [ ] `uv run pytest -q tests/integration/test_dom_selector_reliability.py tests/parity/test_chrome_camoufox_dom_parity.py`
+  - Dependencies: Tasks 1-2
+  - Files:
+    - `src/browser_use_camoufox/session.py`
+    - `tests/integration/test_dom_selector_reliability.py`
+    - `tests/parity/test_chrome_camoufox_dom_parity.py`
+
+- [ ] Task 9: Detect virtual keyboard/button clusters
+  - Acceptance:
+    - [ ] Generic virtual-keyboard fixture exposes grouped rows and button states.
+    - [ ] Keyboard-like clusters are bounded and do not flood normal pages.
+    - [ ] Click/send_keys behavior remains unchanged unless the agent chooses visible controls.
+  - Verify:
+    - [ ] `uv run pytest -q tests/integration/test_interaction_events.py tests/integration/test_dom_selector_reliability.py`
+    - [ ] Targeted run includes `wordle_solve_visible_feedback` after implementation.
+  - Dependencies: Task 8
   - Files:
     - `src/browser_use_camoufox/session.py`
     - `tests/integration/test_interaction_events.py`
-    - `tests/parity/test_forms_dropdown_upload.py`
+    - `tests/integration/test_dom_selector_reliability.py`
 
-- [x] Task 8: Add frame-detach recapture and retry
+## Checkpoint: Visual Interfaces
+
+- [ ] Grid and virtual keyboard fixtures pass.
+- [ ] Agent observations remain compact enough for benchmark runs.
+- [ ] `wordle_solve_visible_feedback` targeted run improves or passes without using hidden state/site-specific logic.
+
+## Phase 5: Benchmark Diagnostics and Final Gate
+
+- [ ] Task 10: Improve runtime-vs-model benchmark classification
   - Acceptance:
-    - [x] Generic detach fixture retries once and succeeds if the target reappears.
-    - [x] Retry is bounded and reports frame-detach recovery diagnostics.
-    - [x] If the target does not reappear, failure clearly says frame/target unavailable.
+    - [ ] Reports include bounded action-plan diagnostics when available.
+    - [ ] Failure classes distinguish runtime/tooling, model/navigation, challenge, page availability, and verifier weakness.
+    - [ ] Scrubbing prevents secrets, cookies, storage state, and large artifacts from leaking.
   - Verify:
-    - [x] `uv run pytest -q tests/parity/test_iframe_dom.py tests/parity/test_stale_indexes.py`
-  - Dependencies: Task 7
-  - Files:
-    - `src/browser_use_camoufox/session.py`
-    - `tests/parity/test_iframe_dom.py`
-    - `tests/parity/test_stale_indexes.py`
-
-## Checkpoint: Autocomplete/Frame Recovery
-
-- [ ] Booking-like generic fixture passes.
-- [ ] Existing iframe and dropdown tests pass.
-- [ ] Run affected benchmark task: `booking_destination_search` under Camoufox.
-
-## Phase 5: Benchmark Hardening and Final Gate
-
-- [x] Task 9: Improve benchmark verifier/report classification
-  - Acceptance:
-    - [x] Matrix report summarizes pass/fail, runtime/tooling errors, candidate diagnostics, fallback paths, and owner category.
-    - [x] Reports remain redacted and generated only under `artifacts/`.
-    - [x] Tests cover the 15 mission stack and matrix deltas.
-  - Verify:
-    - [x] `uv run pytest -q tests/parity/test_chrome_camoufox_dom_parity.py`
-    - [x] `uv run python scripts/real_world_kit.py --list-missions`
-  - Dependencies: Tasks 4-8
+    - [ ] `uv run pytest -q tests/parity/test_chrome_camoufox_dom_parity.py`
+    - [ ] `uv run python scripts/real_world_kit.py --list-missions`
+  - Dependencies: Tasks 3-9
   - Files:
     - `scripts/real_world_kit.py`
     - `tests/parity/test_chrome_camoufox_dom_parity.py`
 
-- [x] Task 10: Run targeted real-site regression loop
+- [ ] Task 11: Run targeted regression loop for remaining failures
   - Acceptance:
-    - [x] `mdn_related_api_flow`, `imdb_title_lookup`, `ebay_product_filter`, and `booking_destination_search` are re-run under Camoufox.
-    - [x] Any remaining failure is classified with runtime/model/site/verifier ownership.
-    - [x] Generated artifacts remain unstaged.
+    - [ ] Targeted Camoufox report is generated under `artifacts/`.
+    - [ ] `ebay_product_filter`, `booking_destination_search`, and `wordle_solve_visible_feedback` are classified with evidence.
+    - [ ] Generated artifacts remain unstaged.
   - Verify:
-    - [x] `xvfb-run -a uv run python scripts/real_world_kit.py --runtime camoufox --mission mdn_related_api_flow --mission imdb_title_lookup --mission ebay_product_filter --mission booking_destination_search --headless --pause-after-task 0 --report-path artifacts/real_world_kit/targeted-camoufox/report.json`
-    - [x] `git status --short`
-  - Dependencies: Task 9
+    - [ ] `xvfb-run -a uv run python scripts/real_world_kit.py --runtime camoufox --mission ebay_product_filter --mission booking_destination_search --mission wordle_solve_visible_feedback --headless --pause-after-task 0 --report-path artifacts/real_world_kit/targeted-camoufox.json`
+    - [ ] `git status --short`
+  - Dependencies: Task 10
   - Files:
     - Generated files only under ignored `artifacts/real_world_kit/`
 
-- [ ] Task 11: Run full validation and 30-run benchmark
+- [ ] Task 12: Run final validators and full 30-run benchmark
   - Acceptance:
     - [ ] Core validators pass.
-    - [ ] Camoufox produces 15/15 mission rows and zero `runtime/tooling` failures.
-    - [ ] Full benchmark produces 30/30 rows.
+    - [ ] Camoufox benchmark passes `15/15`.
+    - [ ] Full matrix produces `30/30` rows.
+    - [ ] Camoufox has zero `runtime/tooling` failures.
     - [ ] Reports are redacted and unstaged.
-    - [ ] Diff review confirms no CDP, no public-site hardcoding, no generated artifacts, and no secrets.
+    - [ ] Diff review confirms no CDP, no BiDi, no public-site hardcoding, no generated artifacts, and no secrets.
   - Verify:
     - [ ] `uv run ruff check src tests scripts`
     - [ ] `uv run ruff format --check src tests scripts`
@@ -183,14 +202,15 @@ IMPORTANT: When a task is fully completed and its verification commands pass, up
     - [ ] `xvfb-run -a uv run python scripts/real_world_kit.py --runtime chrome --headless --pause-after-task 0 --report-path artifacts/real_world_kit/benchmark-chrome/report.json`
     - [ ] `git status --short`
     - [ ] `git diff`
-  - Dependencies: Task 10
+  - Dependencies: Task 11
   - Files:
     - `src/browser_use_camoufox/session.py`
     - `scripts/real_world_kit.py`
     - `tests/**`
+    - Generated files under ignored `artifacts/`
 
 ## Final Checkpoint
 
-- [ ] Human reviews benchmark matrix and approves/blocks merge readiness.
+- [ ] Human reviews plan and task list before implementation begins.
+- [ ] Human resolves whether grouped content should be default observation or tool-first.
 - [ ] If committing, run required git safety checks before staging.
-- [ ] Any unresolved public-site flake is documented with owner category and reproduction evidence.

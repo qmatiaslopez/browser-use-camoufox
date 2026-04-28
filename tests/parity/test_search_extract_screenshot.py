@@ -326,3 +326,53 @@ async def test_evaluate_script_returns_json_for_structured_values(tmp_path: Path
 		assert result.extracted_content == '[{"letter": "G", "state": "correct"}, {"letter": "L", "state": "present"}]'
 	finally:
 		await session.stop()
+
+
+@pytest.mark.anyio
+async def test_find_elements_dense_cards_surface_grouped_visible_evidence(tmp_path: Path):
+	fixture = tmp_path / 'dense-cards.html'
+	fixture.write_text(
+		"""
+		<html>
+			<body>
+				<main id="results">
+					<article class="result-card" data-testid="result-card">
+						<a class="title" href="/alpha">Alpha Travel Pack</a>
+						<span class="price">$42.50</span>
+						<button type="button">Compare Alpha</button>
+						<p>Compact carry option with visible metadata.</p>
+					</article>
+					<article class="result-card" data-testid="result-card">
+						<a class="title" href="/beta">Beta Trail Pack</a>
+						<span class="price">$57.00</span>
+						<button type="button">Compare Beta</button>
+						<p>Trail option with visible metadata.</p>
+					</article>
+				</main>
+			</body>
+		</html>
+		"""
+	)
+	session = CamoufoxSession(headless=True)
+	tools = Tools()
+	register_camoufox_tools(tools)
+
+	try:
+		await session.start()
+		await session.navigate_to(fixture.as_uri())
+
+		result = await tools.registry.execute_action(
+			'find_elements',
+			{'selector': 'article.result-card', 'attributes': ['data-testid']},
+			browser_session=session,
+		)
+
+		assert result.error is None
+		assert 'Alpha Travel Pack' in result.extracted_content
+		assert 'href="/alpha"' in result.extracted_content
+		assert '$42.50' in result.extracted_content
+		assert 'Compare Alpha' in result.extracted_content
+		assert 'Beta Trail Pack' in result.extracted_content
+		assert len(result.extracted_content) < 2000
+	finally:
+		await session.stop()

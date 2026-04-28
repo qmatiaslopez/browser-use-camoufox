@@ -615,6 +615,8 @@ async def test_visual_grid_and_keyboard_fixtures_expose_visible_state(tmp_path: 
 
 		cells = [node for node in state.dom_state.selector_map.values() if node.attributes.get('role') == 'gridcell']
 		keys = [node for node in state.dom_state.selector_map.values() if node.attributes.get('data-key')]
+		grid = next(node for node in state.dom_state.selector_map.values() if node.attributes.get('role') == 'grid')
+		grid_summary = grid.attributes.get('data-browser-use-camoufox-grid-summary', '')
 		assert [(cell.node_value, cell.attributes['data-state']) for cell in cells] == [
 			('A', 'correct'),
 			('B', 'present'),
@@ -628,5 +630,8 @@ async def test_visual_grid_and_keyboard_fixtures_expose_visible_state(tmp_path: 
 		]
 		assert 'aria-label=A correct' in state.dom_state.llm_representation()
 		assert [key.attributes['data-key'] for key in keys] == ['A', 'B', 'C']
+		assert 'rows=2; columns=2' in grid_summary
+		assert 'r1c1=A(correct)' in grid_summary
+		assert 'r2c2=D(empty)' in grid_summary
 	finally:
 		await session.stop()

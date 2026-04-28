@@ -125,13 +125,13 @@ IMPORTANT: When a task is fully completed and its verification commands pass, up
 
 ## Phase 4: Visual Grid and Virtual Keyboard Intelligence
 
-- [ ] Task 8: Detect and expose compact grid state
+- [x] Task 8: Detect and expose compact grid state
   - Acceptance:
-    - [ ] Generic grid fixture produces a compact grid summary with rows, columns, cell labels/text, and states.
-    - [ ] Hidden or offscreen cells are not incorrectly reported as visible.
-    - [ ] Output is bounded and does not read hidden app state or private data.
+    - [x] Generic grid fixture produces a compact grid summary with rows, columns, cell labels/text, and states.
+    - [x] Hidden or offscreen cells are not incorrectly reported as visible.
+    - [x] Output is bounded and does not read hidden app state or private data.
   - Verify:
-    - [ ] `uv run pytest -q tests/integration/test_dom_selector_reliability.py tests/parity/test_chrome_camoufox_dom_parity.py`
+    - [x] `uv run pytest -q tests/integration/test_dom_selector_reliability.py tests/parity/test_chrome_camoufox_dom_parity.py`
   - Dependencies: Tasks 1-2
   - Files:
     - `src/browser_use_camoufox/session.py`

@@ -1777,6 +1777,9 @@ class CamoufoxSession(BrowserSession):
 		ordinal = target.get('ordinal') if target else node.attributes.get('data-browser-use-camoufox-ordinal')
 		if selector is None or ordinal is None:
 			raise RuntimeError(f'Camoufox selector metadata is missing for node {node.node_id}.')
+		shadow_root_type = target.get('shadow_root_type') if target else node.shadow_root_type
+		if shadow_root_type == 'open':
+			return page.locator(str(selector)).nth(int(ordinal))
 		frame_id = target.get('frame_id') if target else node.attributes.get('data-browser-use-camoufox-frame')
 		frame_url = target.get('frame_url') if target else node.attributes.get('data-browser-use-camoufox-frame-url')
 		if frame_id and str(frame_id) != 'main':
@@ -1830,7 +1833,10 @@ class CamoufoxSession(BrowserSession):
 						const rect = element.getBoundingClientRect();
 						const x = rect.left + rect.width / 2;
 						const y = rect.top + rect.height / 2;
-						const hit = document.elementFromPoint(x, y);
+						const root = element.getRootNode();
+						const hit = root && root.elementFromPoint
+							? root.elementFromPoint(x, y)
+							: document.elementFromPoint(x, y);
 						const describe = (candidate) => {
 							if (!candidate) return null;
 							const text = (candidate.innerText || candidate.textContent || '')
@@ -2284,6 +2290,7 @@ class CamoufoxSession(BrowserSession):
 					'main', '[role="main"]', 'article', '[role="article"]', '[role="list"]',
 					'ul', 'ol', '[role="grid"]', 'table',
 				].join(', ');
+				const gridContainerSelector = '[role="grid"], table';
 				const repeatedChromeContainers = [
 					'nav', 'aside', 'header', 'footer', '[role="navigation"]', '[aria-label*="filter" i]',
 				].join(', ');
@@ -2353,6 +2360,10 @@ class CamoufoxSession(BrowserSession):
 						attributes['data-browser-use-camoufox-labels'] = [...new Set(labels)].join(' | ');
 					}
 					if (ownerLabel) attributes['data-browser-use-camoufox-owner'] = ownerLabel;
+					if (element.matches(gridContainerSelector)) {
+						const gridSummary = summarizeGrid(element);
+						if (gridSummary) attributes['data-browser-use-camoufox-grid-summary'] = gridSummary;
+					}
 					for (const attr of Array.from(element.attributes)) {
 						const value = safeAttributeValue(attr.name, attr.value);
 						if (
@@ -2411,6 +2422,48 @@ class CamoufoxSession(BrowserSession):
 						rect: {x: rect.x, y: rect.y, width: rect.width, height: rect.height},
 					};
 				};
+				const summarizeGrid = (grid) => {
+					const visibleCells = Array.from(grid.querySelectorAll('[role="gridcell"], [role="cell"], td, th'))
+						.filter((cell) => {
+							const rect = cell.getBoundingClientRect();
+							const style = window.getComputedStyle(cell);
+							return rect.width > 0 && rect.height > 0
+								&& style.visibility !== 'hidden' && style.display !== 'none';
+						})
+						.slice(0, 36);
+					if (!visibleCells.length) return '';
+					const entries = [];
+					let maxRow = 0;
+					let maxColumn = 0;
+					for (const [index, cell] of visibleCells.entries()) {
+						const rowElement = cell.closest('[role="row"], tr');
+						const siblingCells = rowElement
+							? Array.from(rowElement.querySelectorAll('[role="gridcell"], [role="cell"], td, th'))
+							: visibleCells;
+						const rowElements = Array.from(grid.querySelectorAll('[role="row"], tr'));
+						const row = Number(cell.getAttribute('data-row') || cell.getAttribute('aria-rowindex'))
+							|| (rowElement ? rowElements.indexOf(rowElement) + 1 : 1);
+						const column = Number(cell.getAttribute('data-col') || cell.getAttribute('aria-colindex'))
+							|| siblingCells.indexOf(cell) + 1
+							|| index + 1;
+						const label = normalizeText(
+							cell.innerText || cell.textContent || cell.getAttribute('aria-label') || ''
+						).slice(0, 24);
+						const state = normalizeText(
+							cell.getAttribute('data-state')
+							|| cell.getAttribute('aria-selected')
+							|| cell.getAttribute('aria-checked')
+							|| ''
+						).slice(0, 24);
+						maxRow = Math.max(maxRow, row);
+						maxColumn = Math.max(maxColumn, column);
+						if (label || state) entries.push(`r${row}c${column}=${label}${state ? `(${state})` : ''}`);
+					}
+					if (!entries.length) return '';
+					return [`rows=${maxRow}`, `columns=${maxColumn}`, ...entries.slice(0, 24)]
+						.join('; ')
+						.slice(0, args.maxSemanticEvidenceLength);
+				};
 				const domRoot = document.body || document;
 				const elements = Array.from(domRoot.querySelectorAll('*'))
 					.map((element, documentOrder) => ({...elementPayload(element), documentOrder}))
@@ -2438,6 +2491,7 @@ class CamoufoxSession(BrowserSession):
 					'frameId': 'main' if frame == page.main_frame else f'frame-{frame_index}',
 					'frameUrl': '' if frame == page.main_frame else frame.url,
 					'maxAttributeValueLength': MAX_SAFE_ATTRIBUTE_VALUE_LENGTH,
+					'maxSemanticEvidenceLength': MAX_SEMANTIC_EVIDENCE_LENGTH,
 					'sensitiveAttributeMarkers': list(SENSITIVE_ATTRIBUTE_MARKERS),
 				},
 			)

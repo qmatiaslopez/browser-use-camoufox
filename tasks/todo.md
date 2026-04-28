@@ -90,13 +90,13 @@ IMPORTANT: When a task is fully completed and its verification commands pass, up
     - `tests/parity/test_stale_indexes.py`
     - `tests/parity/test_iframe_dom.py`
 
-- [ ] Task 6: Implement non-ARIA overlay/autocomplete selection
+- [x] Task 6: Implement non-ARIA overlay/autocomplete selection
   - Acceptance:
-    - [ ] Generic non-ARIA autocomplete fixture selects the intended visible suggestion.
-    - [ ] Ambiguous or hidden suggestions are rejected with useful diagnostics.
-    - [ ] Existing ARIA listbox/menu option behavior continues to pass.
+    - [x] Generic non-ARIA autocomplete fixture selects the intended visible suggestion.
+    - [x] Ambiguous or hidden suggestions are rejected with useful diagnostics.
+    - [x] Existing ARIA listbox/menu option behavior continues to pass.
   - Verify:
-    - [ ] `uv run pytest -q tests/integration/test_interaction_events.py tests/parity/test_forms_dropdown_upload.py`
+    - [x] `uv run pytest -q tests/integration/test_interaction_events.py tests/parity/test_forms_dropdown_upload.py`
     - [ ] Targeted run includes `booking_destination_search` after implementation.
   - Dependencies: Task 5
   - Files:

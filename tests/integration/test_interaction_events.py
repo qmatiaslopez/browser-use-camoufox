@@ -415,6 +415,63 @@ async def test_state_includes_non_aria_autocomplete_suggestions(tmp_path: Path):
 
 
 @pytest.mark.anyio
+async def test_click_recovers_non_aria_autocomplete_suggestion_after_no_change(tmp_path: Path):
+	fixture = tmp_path / 'generic_non_aria_autocomplete_select.html'
+	fixture.write_text(
+		"""
+		<html>
+			<body>
+				<label for="destination">Destination</label>
+				<input id="destination" value="har" data-overlay="destination-suggestions" />
+				<div id="destination-suggestions" class="suggestion-panel">
+					<div class="suggestion" data-value="harbor">Harbor Center</div>
+					<div class="suggestion" data-value="harvest">Harvest Square</div>
+				</div>
+				<p id="result">Waiting</p>
+				<script>
+					document.querySelectorAll('.suggestion').forEach((suggestion) => {
+						suggestion.addEventListener('click', (event) => event.preventDefault());
+					});
+					document.querySelector('#destination').addEventListener('change', (event) => {
+						const option = Array.from(document.querySelectorAll('.suggestion'))
+							.find((suggestion) => suggestion.dataset.value === event.target.value);
+						if (option) {
+							document.querySelector('#result').textContent = `Selected ${option.textContent.trim()}`;
+						}
+					});
+				</script>
+			</body>
+		</html>
+		"""
+	)
+	session = CamoufoxSession(headless=True)
+
+	try:
+		await session.start()
+		await session.navigate_to(fixture.as_uri())
+		state_event = session.event_bus.dispatch(BrowserStateRequestEvent(include_dom=True, include_screenshot=False))
+		await state_event
+		state = await state_event.event_result()
+		suggestion = next(
+			node
+			for node in state.dom_state.selector_map.values()
+			if node.node_value == 'Harbor Center' and node.attributes.get('data-value') == 'harbor'
+		)
+
+		await session.on_ClickElementEvent(ClickElementEvent(node=suggestion))
+
+		page = await session.get_current_page()
+		assert await page.locator('#destination').input_value() == 'harbor'
+		assert await page.locator('#result').text_content() == 'Selected Harbor Center'
+		diagnostics = session.last_click_diagnostics
+		assert diagnostics is not None
+		assert diagnostics['fallback']['attempted'] == ['click', 'autocomplete_option']
+		assert diagnostics['fallback']['result'] == 'autocomplete_option_succeeded'
+	finally:
+		await session.stop()
+
+
+@pytest.mark.anyio
 async def test_top_layer_intercepted_click_fixture_preserves_blocked_target(tmp_path: Path):
 	fixture = tmp_path / 'top_layer_intercept.html'
 	fixture.write_text(

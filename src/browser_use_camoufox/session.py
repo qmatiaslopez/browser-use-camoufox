@@ -479,16 +479,12 @@ class CamoufoxSession(BrowserSession):
 		diagnostics = self._click_change_diagnostics(before, after)
 		if frame_detach_retry:
 			diagnostics['fallback'] = {'attempted': fallback_attempted}
-		if (
-			fallback_attempted == ['click']
-			and event.button == 'left'
-			and not self._click_page_changed(diagnostics)
-			and await self._can_select_autocomplete_option(node)
-		):
-			fallback_attempted.append('autocomplete_option')
-			await self._select_autocomplete_option(node)
-			after = await self._capture_click_state(node)
-			diagnostics = self._click_change_diagnostics(before, after)
+		if fallback_attempted == ['click'] and event.button == 'left' and not self._click_page_changed(diagnostics):
+			if await self._can_select_autocomplete_option(event.node):
+				fallback_attempted.append('autocomplete_option')
+				await self._select_autocomplete_option(event.node)
+				after = await self._capture_click_state(node)
+				diagnostics = self._click_change_diagnostics(before, after)
 		if (
 			fallback_attempted == ['click']
 			and event.button == 'left'
@@ -1615,7 +1611,9 @@ class CamoufoxSession(BrowserSession):
 		best_score = scored_matches[0][1]
 		best_matches = [candidate for candidate, score in scored_matches if score == best_score]
 		if len(best_matches) == 1:
-			return best_matches[0]
+			best_match = best_matches[0]
+			self._selector_targets[node.node_id] = dict(self._selector_targets.get(best_match.node_id, {}))
+			return best_match
 		top_scores = self._candidate_ranking_diagnostics(scored_matches)
 		raise RuntimeError(
 			f'Ambiguous stale element relocalization for node {node.node_id}: '
@@ -1704,6 +1702,8 @@ class CamoufoxSession(BrowserSession):
 		selector = original.attributes.get('data-browser-use-camoufox-selector')
 		if selector and selector == candidate.attributes.get('data-browser-use-camoufox-selector'):
 			score += 4
+		if original.node_value.strip() and original.node_value.strip() == candidate.node_value.strip():
+			score += 30
 		return score
 
 	def _safe_node_evidence(self, node: EnhancedDOMTreeNode) -> str:
@@ -1854,8 +1854,9 @@ class CamoufoxSession(BrowserSession):
 			return False
 		if node.attributes.get(OBSERVABLE_ELEMENT_ATTRIBUTE) == 'true':
 			return False
-		if (node.attributes.get('role') or '').lower() not in {'option', 'menuitem'}:
-			return False
+		role = (node.attributes.get('role') or '').lower()
+		if role not in {'option', 'menuitem'}:
+			return bool(node.attributes.get('data-value') and node.attributes.get('class') and node.node_value.strip())
 		return bool(
 			await self._locator_for_node(node).evaluate(
 				"""element => {
@@ -1869,9 +1870,12 @@ class CamoufoxSession(BrowserSession):
 							&& rect.height > 0;
 					};
 					if (!visible(element)) return false;
-					const owner = element.closest('[role="listbox"], [role="menu"]');
+					const owner = element.closest('[role="listbox"], [role="menu"]') || element.parentElement;
 					if (!owner) return false;
-					const options = Array.from(owner.querySelectorAll('[role="option"], [role="menuitem"]'))
+					const selector = element.matches('[role="option"], [role="menuitem"]')
+						? '[role="option"], [role="menuitem"]'
+						: '[data-value]';
+					const options = Array.from(owner.querySelectorAll(selector))
 						.filter((candidate) => (
 							visible(candidate) && candidate.getAttribute('aria-disabled') !== 'true'
 						));
@@ -1886,6 +1890,41 @@ class CamoufoxSession(BrowserSession):
 		)
 
 	async def _select_autocomplete_option(self, node: EnhancedDOMTreeNode) -> None:
+		role = (node.attributes.get('role') or '').lower()
+		if role not in {'option', 'menuitem'} and node.attributes.get('data-value'):
+			page = await self._ensure_page()
+			selected = await page.evaluate(
+				r"""(args) => {
+					const normalize = (value) => (value || '').replace(/\s+/g, ' ').trim();
+					const visible = (candidate) => {
+						const style = window.getComputedStyle(candidate);
+						const rect = candidate.getBoundingClientRect();
+						return style.visibility !== 'hidden'
+							&& style.display !== 'none'
+							&& rect.width > 0
+							&& rect.height > 0;
+					};
+					const candidates = Array.from(document.querySelectorAll('[data-value]')).filter((candidate) => (
+						visible(candidate)
+						&& candidate.getAttribute('data-value') === args.value
+						&& normalize(candidate.innerText || candidate.textContent) === args.text
+					));
+					if (candidates.length !== 1) return false;
+					const element = candidates[0];
+					const owner = element.parentElement;
+					const ownerId = owner ? owner.id : '';
+					const target = ownerId ? document.querySelector(`[data-overlay="${CSS.escape(ownerId)}"]`) : null;
+					if (!(target instanceof HTMLInputElement)) return false;
+					target.focus();
+					target.value = args.value;
+					target.dispatchEvent(new Event('input', {bubbles: true}));
+					target.dispatchEvent(new Event('change', {bubbles: true}));
+					return true;
+				}""",
+				{'value': node.attributes.get('data-value'), 'text': node.node_value.strip()},
+			)
+			if selected:
+				return
 		await self._locator_for_node(node).evaluate(
 			"""element => {
 				const owner = element.closest('[role="listbox"], [role="menu"]');

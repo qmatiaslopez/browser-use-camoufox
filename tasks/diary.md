@@ -18,3 +18,6 @@
 - Completed Task 5 conservative action planner diagnostics.
 - Last-click diagnostics now include bounded action-plan strategy, preconditions, attempted steps, result, and classified no-change reason while preserving existing click, keyboard, autocomplete, form-submit, and frame-detach behavior.
 - Validators passed: `uv run pytest -q tests/integration/test_interaction_events.py tests/parity/test_stale_indexes.py tests/parity/test_iframe_dom.py`, `uv run ruff check src tests scripts`, `uv run ruff format --check src tests scripts`, `uv run pyright`, and `uv build`.
+- Completed Task 6 non-ARIA overlay/autocomplete selection.
+- Click recovery now recognizes visible custom suggestions with `data-value`, selects the intended value through its owning input, and preserves existing ARIA option/menu behavior.
+- Validators passed: `uv run pytest -q tests/integration/test_interaction_events.py tests/parity/test_forms_dropdown_upload.py`, `uv run ruff check src tests scripts`, `uv run ruff format --check src tests scripts`, `uv run pyright`, and `uv build`.

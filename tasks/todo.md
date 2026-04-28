@@ -18,14 +18,14 @@ IMPORTANT: When a task is fully completed and its verification commands pass, up
     - `tests/integration/test_dom_selector_reliability.py`
     - `tests/parity/test_search_extract_screenshot.py`
 
-- [ ] Task 2: Define bounded semantic model helpers
+- [x] Task 2: Define bounded semantic model helpers
   - Acceptance:
-    - [ ] Evidence includes role/name/text/labels/owner/geometry/interactable state where available.
-    - [ ] Sensitive attributes and long text are redacted or bounded.
-    - [ ] Existing DOM selector behavior remains compatible with current tests.
+    - [x] Evidence includes role/name/text/labels/owner/geometry/interactable state where available.
+    - [x] Sensitive attributes and long text are redacted or bounded.
+    - [x] Existing DOM selector behavior remains compatible with current tests.
   - Verify:
-    - [ ] `uv run pytest -q tests/unit/test_diagnostics.py tests/integration/test_dom_selector_reliability.py`
-    - [ ] `uv run pytest -q tests/parity/test_chrome_camoufox_dom_parity.py`
+    - [x] `uv run pytest -q tests/unit/test_diagnostics.py tests/integration/test_dom_selector_reliability.py`
+    - [x] `uv run pytest -q tests/parity/test_chrome_camoufox_dom_parity.py`
   - Dependencies: Task 1
   - Files:
     - `src/browser_use_camoufox/session.py`

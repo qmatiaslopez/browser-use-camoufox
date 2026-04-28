@@ -4,7 +4,7 @@ import pytest
 from browser_use.browser.events import BrowserStateRequestEvent, ClickElementEvent, SendKeysEvent, TypeTextEvent
 
 from browser_use_camoufox import CamoufoxSession
-from browser_use_camoufox.session import OBSERVABLE_ELEMENT_ATTRIBUTE
+from browser_use_camoufox.session import OBSERVABLE_ELEMENT_ATTRIBUTE, SEMANTIC_EVIDENCE_ATTRIBUTE
 
 
 @pytest.mark.anyio
@@ -100,6 +100,50 @@ async def test_actionable_nodes_include_bounded_redacted_semantic_evidence(tmp_p
 		assert 'must-not-leak' not in evidence
 		assert len(evidence) <= 240
 		assert button.attributes['data-browser-use-camoufox-selector'] == '#submit'
+	finally:
+		await session.stop()
+
+
+@pytest.mark.anyio
+async def test_semantic_evidence_includes_owner_labels_and_interactable_state(tmp_path: Path):
+	fixture = tmp_path / 'semantic_owner_state.html'
+	fixture.write_text(
+		"""
+		<html>
+			<body>
+				<section aria-label="Checkout Panel">
+					<label for="coupon">Coupon code</label>
+					<input id="coupon" placeholder="Discount code" value="SAVE10" />
+					<button id="apply" aria-label="Apply coupon">Apply</button>
+					<button id="locked" aria-disabled="true">Locked apply</button>
+				</section>
+			</body>
+		</html>
+		"""
+	)
+	session = CamoufoxSession(headless=True)
+
+	try:
+		await session.start()
+		await session.navigate_to(fixture.as_uri())
+		state_event = session.event_bus.dispatch(BrowserStateRequestEvent(include_dom=True, include_screenshot=False))
+		await state_event
+		state = await state_event.event_result()
+
+		input_node = next(
+			node for node in state.dom_state.selector_map.values() if node.attributes.get('id') == 'coupon'
+		)
+		input_evidence = input_node.attributes.get(SEMANTIC_EVIDENCE_ATTRIBUTE, '')
+		assert 'label=Coupon code' in input_evidence
+		assert 'owner=Checkout Panel' in input_evidence
+		assert 'interactable=enabled' in input_evidence
+		assert 'role=' in input_evidence
+		assert 'geometry=' in input_evidence
+
+		locked = next(node for node in state.dom_state.selector_map.values() if node.attributes.get('id') == 'locked')
+		locked_evidence = locked.attributes.get(SEMANTIC_EVIDENCE_ATTRIBUTE, '')
+		assert 'owner=Checkout Panel' in locked_evidence
+		assert 'interactable=disabled' in locked_evidence
 	finally:
 		await session.stop()
 

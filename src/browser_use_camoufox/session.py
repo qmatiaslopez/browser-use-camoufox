@@ -2091,6 +2091,35 @@ class CamoufoxSession(BrowserSession):
 							if (value !== null) attributes[name] = value;
 						}
 					}
+					const ownerElement = element.closest(
+						'main, [role="main"], article, section, form, fieldset, [role="group"], [role="region"]'
+					);
+					const ownerLabel = ownerElement && ownerElement !== element
+						? normalizeText(
+							ownerElement.getAttribute('aria-label')
+							|| ownerElement.getAttribute('title')
+							|| (ownerElement.querySelector('h1, h2, h3, legend') || {}).innerText
+							|| ''
+						).slice(0, args.maxAttributeValueLength)
+						: '';
+					const labels = [];
+					if (element.id) {
+						for (const label of Array.from(document.querySelectorAll(
+							`label[for="${CSS.escape(element.id)}"]`
+						)).slice(0, 2)) {
+							const text = normalizeText(label.innerText || label.textContent || '');
+							if (text) labels.push(text.slice(0, args.maxAttributeValueLength));
+						}
+					}
+					const wrappingLabel = element.closest('label');
+					if (wrappingLabel) {
+						const text = normalizeText(wrappingLabel.innerText || wrappingLabel.textContent || '');
+						if (text) labels.push(text.slice(0, args.maxAttributeValueLength));
+					}
+					if (labels.length) {
+						attributes['data-browser-use-camoufox-labels'] = [...new Set(labels)].join(' | ');
+					}
+					if (ownerLabel) attributes['data-browser-use-camoufox-owner'] = ownerLabel;
 					for (const attr of Array.from(element.attributes)) {
 						const value = safeAttributeValue(attr.name, attr.value);
 						if (
@@ -2206,7 +2235,17 @@ class CamoufoxSession(BrowserSession):
 		text = re.sub(r'\s+', ' ', str(element.get('text') or '')).strip()
 		if text:
 			parts.append(f'text={text}')
-		for name in ('data-testid', 'data-state', 'aria-label', 'title', 'placeholder', 'alt', 'name', 'type', 'role'):
+		for label in attributes.get('data-browser-use-camoufox-labels', '').split(' | '):
+			if label:
+				parts.append(f'label={label}')
+		owner = attributes.get('data-browser-use-camoufox-owner')
+		if owner:
+			parts.append(f'owner={owner}')
+		role = attributes.get('role') or self._implicit_role_for_node(element)
+		parts.append(f'role={role}')
+		interactable = 'disabled' if element.get('is_disabled', False) else 'enabled'
+		parts.append(f'interactable={interactable}')
+		for name in ('data-testid', 'data-state', 'aria-label', 'title', 'placeholder', 'alt', 'name', 'type'):
 			value = attributes.get(name)
 			if value:
 				parts.append(f'{name}={value}')
@@ -2217,6 +2256,28 @@ class CamoufoxSession(BrowserSession):
 		if len(evidence) <= MAX_SEMANTIC_EVIDENCE_LENGTH:
 			return evidence
 		return evidence[: MAX_SEMANTIC_EVIDENCE_LENGTH - 1].rstrip() + '…'
+
+	def _implicit_role_for_node(self, element: dict[str, Any]) -> str:
+		tag_name = str(element.get('tagName') or '').upper()
+		attributes = cast(dict[str, str], element.get('attributes') or {})
+		if tag_name == 'BUTTON':
+			return 'button'
+		if tag_name == 'A' and attributes.get('href'):
+			return 'link'
+		if tag_name == 'INPUT':
+			input_type = (attributes.get('type') or 'text').lower()
+			if input_type == 'checkbox':
+				return 'checkbox'
+			if input_type == 'radio':
+				return 'radio'
+			if input_type in {'button', 'submit', 'reset'}:
+				return 'button'
+			return 'textbox'
+		if tag_name == 'TEXTAREA':
+			return 'textbox'
+		if tag_name == 'SELECT':
+			return 'combobox'
+		return ''
 
 	def _node_from_payload(
 		self, payload: dict[str, Any], index: int, attributes: dict[str, str]

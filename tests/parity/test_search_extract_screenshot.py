@@ -373,6 +373,10 @@ async def test_find_elements_dense_cards_surface_grouped_visible_evidence(tmp_pa
 		assert '$42.50' in result.extracted_content
 		assert 'Compare Alpha' in result.extracted_content
 		assert 'Beta Trail Pack' in result.extracted_content
+		assert 'group: title="Alpha Travel Pack"' in result.extracted_content
+		assert 'primary_link="/alpha"' in result.extracted_content
+		assert 'metadata="$42.50"' in result.extracted_content
+		assert 'actions="Compare Alpha"' in result.extracted_content
 		assert len(result.extracted_content) < 2000
 	finally:
 		await session.stop()

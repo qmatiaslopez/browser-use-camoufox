@@ -9,3 +9,6 @@
 - Completed Task 2 semantic model helpers.
 - Semantic evidence now includes labels, owner context, implicit role, geometry, and enabled/disabled interactable state while preserving sensitive attribute redaction and bounded text.
 - Validators passed: `uv run ruff check src tests scripts`, `uv run ruff format --check src tests scripts`, `uv run pyright`, `uv run pytest -q tests/unit/test_diagnostics.py tests/integration/test_dom_selector_reliability.py tests/parity/test_chrome_camoufox_dom_parity.py`, and `uv build`.
+- Completed Task 3 grouped card/list extraction.
+- `find_elements` now emits compact grouped evidence for card-like results, including title, primary link, price-like visible metadata, and actions while preserving existing child evidence.
+- Validators passed: `uv run ruff check src tests scripts`, `uv run ruff format --check src tests scripts`, `uv run pyright`, `uv run pytest -q tests/parity/test_search_extract_screenshot.py tests/integration/test_dom_selector_reliability.py`, and `uv build`.

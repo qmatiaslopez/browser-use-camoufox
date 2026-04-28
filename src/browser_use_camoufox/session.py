@@ -791,20 +791,25 @@ class CamoufoxSession(BrowserSession):
 				const rawText = args.includeText
 					? (element.innerText || element.value || element.getAttribute('aria-label') || '')
 					: '';
+				const visibleText = (node) => {
+					const style = window.getComputedStyle(node);
+					const rect = node.getBoundingClientRect();
+					if (
+						style.visibility === 'hidden'
+						|| style.display === 'none'
+						|| rect.width <= 0
+						|| rect.height <= 0
+					) return '';
+					return normalizeText(node.innerText || node.value || node.getAttribute('aria-label') || '');
+				};
 				const childEvidence = [];
 				const childSelectors = [
 					'a[href]', 'button', '[role="button"]', '[role="link"]', '[role="option"]',
 					'[data-state]', '[aria-label]', '[data-value]'
 				].join(', ');
 				for (const child of Array.from(element.querySelectorAll(childSelectors)).slice(0, 12)) {
-					const childStyle = window.getComputedStyle(child);
-					const childRect = child.getBoundingClientRect();
-					if (
-						childStyle.visibility === 'hidden'
-						|| childStyle.display === 'none'
-						|| childRect.width <= 0
-						|| childRect.height <= 0
-					) continue;
+					const text = visibleText(child);
+					if (!text) continue;
 					const childAttributes = {};
 					for (const name of args.attributes || []) {
 						if (isSensitive(name)) continue;
@@ -822,15 +827,39 @@ class CamoufoxSession(BrowserSession):
 					}
 					childEvidence.push({
 						tag: child.tagName.toLowerCase(),
-						text: normalizeText(child.innerText || child.value || child.getAttribute('aria-label') || ''),
+						text,
 						attributes: childAttributes,
 					});
 				}
+				const primaryLink = Array.from(element.querySelectorAll('a[href]')).find((child) => visibleText(child));
+				const titleElement = primaryLink || element.querySelector('h1, h2, h3, [role="heading"]');
+				const title = titleElement ? visibleText(titleElement) : '';
+				const metadata = Array.from(element.querySelectorAll('*'))
+					.map((child) => visibleText(child))
+					.filter((text) => /(?:[$€£¥]\\s?\\d|\\d[\\d,.]*\\s?(?:usd|eur|gbp|stars?|reviews?))/i.test(text))
+					.slice(0, 4);
+				const actionSelector = [
+					'button',
+					'[role="button"]',
+					'input[type="button"]',
+					'input[type="submit"]',
+				].join(', ');
+				const actions = Array.from(element.querySelectorAll(actionSelector))
+					.map((child) => visibleText(child))
+					.filter(Boolean)
+					.slice(0, 4);
+				const groupEvidence = title || primaryLink || metadata.length || actions.length ? {
+					title: title.slice(0, args.maxAttributeLength),
+					primaryLink: primaryLink ? primaryLink.getAttribute('href') : '',
+					metadata: metadata.map((value) => value.slice(0, args.maxAttributeLength)),
+					actions: actions.map((value) => value.slice(0, args.maxAttributeLength)),
+				} : null;
 				return {
 					tag: element.tagName.toLowerCase(),
 					text: normalizeText(rawText),
 					attributes,
 					childEvidence,
+					groupEvidence,
 					path: pathFor(element),
 				};
 				function pathFor(element) {
@@ -863,6 +892,19 @@ class CamoufoxSession(BrowserSession):
 			text = f' {item["text"]}' if item['text'] else ''
 			path = f' path: {item["path"]}' if item.get('path') else ''
 			lines.append(f'- <{item["tag"]} {attrs}>{text}{path}'.rstrip())
+			if item.get('groupEvidence'):
+				group = item['groupEvidence']
+				group_parts = []
+				if group.get('title'):
+					group_parts.append(f'title="{group["title"]}"')
+				if group.get('primaryLink'):
+					group_parts.append(f'primary_link="{group["primaryLink"]}"')
+				if group.get('metadata'):
+					group_parts.append(f'metadata="{", ".join(group["metadata"])}"')
+				if group.get('actions'):
+					group_parts.append(f'actions="{", ".join(group["actions"])}"')
+				if group_parts:
+					lines.append(f'  group: {"; ".join(group_parts)}')
 			for child in item.get('childEvidence') or []:
 				child_attrs = ' '.join(
 					f'{key}="{value}"' for key, value in child['attributes'].items() if value is not None

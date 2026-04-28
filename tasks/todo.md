@@ -41,13 +41,13 @@ IMPORTANT: When a task is fully completed and its verification commands pass, up
 
 ## Phase 2: Dense Content Understanding
 
-- [ ] Task 3: Implement grouped card/list extraction
+- [x] Task 3: Implement grouped card/list extraction
   - Acceptance:
-    - [ ] Generic dense-card fixture returns grouped units with title, primary link, price-like visible metadata, and actions.
-    - [ ] Output is compact, redacted, and bounded.
-    - [ ] Existing `find_elements`, `search_page`, and DOM parity tests continue to pass.
+    - [x] Generic dense-card fixture returns grouped units with title, primary link, price-like visible metadata, and actions.
+    - [x] Output is compact, redacted, and bounded.
+    - [x] Existing `find_elements`, `search_page`, and DOM parity tests continue to pass.
   - Verify:
-    - [ ] `uv run pytest -q tests/parity/test_search_extract_screenshot.py tests/integration/test_dom_selector_reliability.py`
+    - [x] `uv run pytest -q tests/parity/test_search_extract_screenshot.py tests/integration/test_dom_selector_reliability.py`
     - [ ] Targeted run includes `ebay_product_filter` after implementation.
   - Dependencies: Tasks 1-2
   - Files:

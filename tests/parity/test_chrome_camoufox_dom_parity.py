@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -315,6 +316,61 @@ def test_mission_report_diagnostics_classify_runtime_tooling_failure():
 	assert report['diagnostics']['runtime_tool_errors'] == ['ClickElementError: target detached']
 	assert report['failure_class'] == 'runtime/tooling'
 	assert 'abcdef' not in report['diagnostics']['final_state']['body_excerpt']
+
+
+def test_mission_report_includes_bounded_action_plan_diagnostics_when_available():
+	report = real_world_kit.enrich_mission_report(
+		{
+			'passed': False,
+			'errors': [],
+			'history': {
+				'action_names': ['click_element'],
+				'urls': ['https://example.test/form'],
+				'errors': [],
+			},
+			'verification': {
+				'passed': False,
+				'details': {'url': 'https://example.test/form'},
+				'errors': ['Visible/final evidence missing required terms: checkout'],
+			},
+			'runtime_diagnostics': {
+				'last_click': {
+					'action_plan': {
+						'strategy': 'safe-click',
+						'preconditions': ['visible', 'enabled', 'token=secret-token'],
+						'attempted_steps': [{'step': f'step-{index}', 'result': 'no-change'} for index in range(12)],
+					},
+					'candidate_rankings': [
+						{'node': 1, 'score': 22, 'semantic_evidence': 'Checkout password=secret-token'}
+					],
+				}
+			},
+		},
+		final_state={
+			'url': 'https://example.test/form',
+			'title': 'Checkout Form',
+			'body_text': 'Need checkout',
+			'dom_metrics': {'element_count': 7, 'body_text_length': 13},
+		},
+		duration_seconds=1.0,
+	)
+
+	action_plans = report['diagnostics']['action_plans']
+	assert action_plans == [
+		{
+			'action': 'last_click',
+			'strategy': 'safe-click',
+			'preconditions': ['visible', 'enabled', 'token=<redacted>'],
+			'attempted_steps': [{'step': f'step-{index}', 'result': 'no-change'} for index in range(6)],
+			'result': None,
+			'no_change_reason': None,
+		}
+	]
+	assert report['diagnostics']['candidate_rankings'] == [
+		{'node': 1, 'score': 22, 'semantic_evidence': 'Checkout password=<redacted>'}
+	]
+	assert report['failure_class'] == 'model/navigation'
+	assert 'secret-token' not in json.dumps(report)
 
 
 def test_benchmark_stack_has_five_families_three_variations_and_real_sites():

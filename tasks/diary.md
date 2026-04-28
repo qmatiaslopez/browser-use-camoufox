@@ -32,3 +32,6 @@
 - Completed Task 9 virtual keyboard/button cluster detection.
 - Keyboard-like containers now expose bounded `data-browser-use-camoufox-keyboard-summary` rows with visible key labels, state values, and disabled state while preserving normal click/send_keys behavior.
 - Validators passed: `uv run pytest -q tests/integration/test_interaction_events.py tests/integration/test_dom_selector_reliability.py`, `uv run ruff check src tests scripts`, `uv run ruff format --check src tests scripts`, `uv run pyright`, and `uv build`.
+- Completed Task 10 runtime-vs-model benchmark classification.
+- Real-world mission reports now include bounded Camoufox action-plan diagnostics, fallback paths, and candidate rankings when available, and verification-only evidence misses classify as `model/navigation` instead of runtime failures.
+- Validators passed: `uv run pytest -q tests/parity/test_chrome_camoufox_dom_parity.py`, `uv run python scripts/real_world_kit.py --list-missions`, `uv run ruff check src tests scripts`, `uv run ruff format --check src tests scripts`, `uv run pyright`, and `uv build`.

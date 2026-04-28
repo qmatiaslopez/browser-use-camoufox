@@ -614,6 +614,46 @@ def action_result_summary(action_results: list[dict[str, Any]]) -> list[dict[str
 	return [{'action': result.get('action'), 'passed': bool(result.get('passed'))} for result in action_results]
 
 
+def bounded_list(value: Any, *, limit: int = 6) -> list[Any]:
+	return value[:limit] if isinstance(value, list) else []
+
+
+def bounded_action_plan_diagnostics(runtime_diagnostics: dict[str, Any]) -> list[dict[str, Any]]:
+	action_plans: list[dict[str, Any]] = []
+	for action_key in ('last_click', 'last_keyboard'):
+		action_diagnostics = runtime_diagnostics.get(action_key)
+		if not isinstance(action_diagnostics, dict):
+			continue
+		action_plan = action_diagnostics.get('action_plan')
+		if not isinstance(action_plan, dict):
+			continue
+		action_plans.append(
+			{
+				'action': action_key,
+				'strategy': action_plan.get('strategy'),
+				'preconditions': bounded_list(action_plan.get('preconditions')),
+				'attempted_steps': bounded_list(action_plan.get('attempted_steps')),
+				'result': action_plan.get('result'),
+				'no_change_reason': action_plan.get('no_change_reason'),
+			}
+		)
+	return action_plans
+
+
+def collect_runtime_diagnostic_items(runtime_diagnostics: dict[str, Any], key: str) -> list[Any]:
+	items: list[Any] = []
+	for action_key in ('last_click', 'last_keyboard'):
+		action_diagnostics = runtime_diagnostics.get(action_key)
+		if not isinstance(action_diagnostics, dict):
+			continue
+		value = action_diagnostics.get(key)
+		if isinstance(value, list):
+			items.extend(value)
+		elif value:
+			items.append(value)
+	return items[:6]
+
+
 def mission_result_summary(mission_report: dict[str, Any]) -> dict[str, Any]:
 	history = mission_report.get('history', {})
 	verification = mission_report.get('verification', {})
@@ -640,6 +680,7 @@ def mission_result_summary(mission_report: dict[str, Any]) -> dict[str, Any]:
 		'runtime_tool_errors': diagnostics.get('runtime_tool_errors', []),
 		'fallback_paths': diagnostics.get('fallback_paths', []),
 		'candidate_rankings': diagnostics.get('candidate_rankings', []),
+		'action_plans': diagnostics.get('action_plans', []),
 	}
 
 
@@ -773,6 +814,10 @@ def url_transitions(urls: list[str]) -> list[dict[str, str]]:
 def classify_failure(report: dict[str, Any]) -> str:
 	if report.get('passed') is True:
 		return 'unknown'
+	verification_errors = ' '.join(str(item) for item in report.get('verification', {}).get('errors', [])).lower()
+	if verification_errors and not report.get('errors') and not report.get('history', {}).get('errors', []):
+		if any(marker in verification_errors for marker in ('missing required terms', 'final answer', 'visible/final')):
+			return 'model/navigation'
 	text = ' '.join(
 		str(item)
 		for item in [
@@ -803,6 +848,9 @@ def enrich_mission_report(
 	history = report.get('history', {})
 	action_names = history.get('action_names', [])
 	runtime_tool_errors = [error for error in history.get('errors', []) if error]
+	runtime_diagnostics = report.get('runtime_diagnostics', {})
+	if not isinstance(runtime_diagnostics, dict):
+		runtime_diagnostics = {}
 	final_state = final_state or {}
 	enriched = {
 		**report,
@@ -818,6 +866,9 @@ def enrich_mission_report(
 			'url_transitions': url_transitions(history.get('urls', [])),
 			'runtime_tool_errors': runtime_tool_errors,
 			'verifier': report.get('verification', {}),
+			'action_plans': bounded_action_plan_diagnostics(runtime_diagnostics),
+			'fallback_paths': collect_runtime_diagnostic_items(runtime_diagnostics, 'fallback'),
+			'candidate_rankings': collect_runtime_diagnostic_items(runtime_diagnostics, 'candidate_rankings'),
 		},
 	}
 	enriched['failure_class'] = classify_failure(enriched)
@@ -839,6 +890,15 @@ async def capture_final_state(session: CamoufoxSession | BrowserSession) -> dict
 		'title': await page_title(session, page),
 		'body_text': body_text,
 		'dom_metrics': dom_metrics,
+	}
+
+
+def capture_runtime_diagnostics(session: CamoufoxSession | BrowserSession) -> dict[str, Any]:
+	if not isinstance(session, CamoufoxSession):
+		return {}
+	return {
+		'last_click': session.last_click_diagnostics() or {},
+		'last_keyboard': session.last_keyboard_diagnostics() or {},
 	}
 
 
@@ -883,6 +943,7 @@ async def run_mission(
 		result['history'] = history_summary(history)
 		verification = await verify_mission(mission, session, history.final_result())
 		result['verification'] = asdict(verification)
+		result['runtime_diagnostics'] = capture_runtime_diagnostics(session)
 		result['passed'] = history.is_successful() is True and verification.passed
 		if history.is_successful() is not True:
 			result['errors'].append(f'Agent did not finish successfully: {history.is_successful()}')

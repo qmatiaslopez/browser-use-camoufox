@@ -160,14 +160,14 @@ IMPORTANT: When a task is fully completed and its verification commands pass, up
 
 ## Phase 5: Benchmark Diagnostics and Final Gate
 
-- [ ] Task 10: Improve runtime-vs-model benchmark classification
+- [x] Task 10: Improve runtime-vs-model benchmark classification
   - Acceptance:
-    - [ ] Reports include bounded action-plan diagnostics when available.
-    - [ ] Failure classes distinguish runtime/tooling, model/navigation, challenge, page availability, and verifier weakness.
-    - [ ] Scrubbing prevents secrets, cookies, storage state, and large artifacts from leaking.
+    - [x] Reports include bounded action-plan diagnostics when available.
+    - [x] Failure classes distinguish runtime/tooling, model/navigation, challenge, page availability, and verifier weakness.
+    - [x] Scrubbing prevents secrets, cookies, storage state, and large artifacts from leaking.
   - Verify:
-    - [ ] `uv run pytest -q tests/parity/test_chrome_camoufox_dom_parity.py`
-    - [ ] `uv run python scripts/real_world_kit.py --list-missions`
+    - [x] `uv run pytest -q tests/parity/test_chrome_camoufox_dom_parity.py`
+    - [x] `uv run python scripts/real_world_kit.py --list-missions`
   - Dependencies: Tasks 3-9
   - Files:
     - `scripts/real_world_kit.py`

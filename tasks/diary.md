@@ -21,3 +21,7 @@
 - Completed Task 6 non-ARIA overlay/autocomplete selection.
 - Click recovery now recognizes visible custom suggestions with `data-value`, selects the intended value through its owning input, and preserves existing ARIA option/menu behavior.
 - Validators passed: `uv run pytest -q tests/integration/test_interaction_events.py tests/parity/test_forms_dropdown_upload.py`, `uv run ruff check src tests scripts`, `uv run ruff format --check src tests scripts`, `uv run pyright`, and `uv build`.
+- Completed Task 7 hit-target, top-layer, and scroll-container recovery.
+- Click handling now validates the intended hit target before direct clicks, classifies top-layer blockers without unsafe fallback clicks, and coordinate clicks reject non-interactive hit targets before dispatch.
+- Nested scroll-container coverage confirms scrolling the nearest container allows the intended target click.
+- Validators passed: `uv run pytest -q tests/integration/test_interaction_events.py tests/integration/test_dom_selector_reliability.py`, `uv run ruff check src tests scripts`, `uv run ruff format --check src tests scripts`, `uv run pyright`, and `uv build`.

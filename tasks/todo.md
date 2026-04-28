@@ -104,13 +104,13 @@ IMPORTANT: When a task is fully completed and its verification commands pass, up
     - `tests/integration/test_interaction_events.py`
     - `tests/parity/test_forms_dropdown_upload.py`
 
-- [ ] Task 7: Add hit-target, top-layer, and scroll-container recovery
+- [x] Task 7: Add hit-target, top-layer, and scroll-container recovery
   - Acceptance:
-    - [ ] Intercepted/top-layer fixture classifies the blocker and avoids unsafe clicks.
-    - [ ] Nested scroll-container fixture scrolls the correct container and clicks the intended target.
-    - [ ] Safe coordinate click validates the hit target before use.
+    - [x] Intercepted/top-layer fixture classifies the blocker and avoids unsafe clicks.
+    - [x] Nested scroll-container fixture scrolls the correct container and clicks the intended target.
+    - [x] Safe coordinate click validates the hit target before use.
   - Verify:
-    - [ ] `uv run pytest -q tests/integration/test_interaction_events.py tests/integration/test_dom_selector_reliability.py`
+    - [x] `uv run pytest -q tests/integration/test_interaction_events.py tests/integration/test_dom_selector_reliability.py`
   - Dependencies: Task 5
   - Files:
     - `src/browser_use_camoufox/session.py`

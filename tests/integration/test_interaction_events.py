@@ -5,6 +5,7 @@ from browser_use.browser.events import (
 	BrowserStateRequestEvent,
 	ClickCoordinateEvent,
 	ClickElementEvent,
+	ScrollEvent,
 	ScrollToTextEvent,
 )
 
@@ -513,5 +514,84 @@ async def test_top_layer_intercepted_click_fixture_preserves_blocked_target(tmp_
 		page = await session.get_current_page()
 		assert await page.locator('body').get_attribute('data-clicked') is None
 		assert session.last_click_diagnostics is not None
+		assert session.last_click_diagnostics['action_plan']['no_change_reason'] == 'click_blocked_by_top_layer'
+	finally:
+		await session.stop()
+
+
+@pytest.mark.anyio
+async def test_coordinate_click_rejects_mismatched_hit_target(tmp_path: Path):
+	fixture = tmp_path / 'coordinate-hit-target.html'
+	fixture.write_text(
+		"""
+		<html>
+			<body>
+				<button id="blocked" onclick="document.body.dataset.clicked='blocked'">Blocked action</button>
+				<div
+					id="cover"
+					style="position:fixed; left:0; top:0; width:200px; height:80px; z-index:10"
+					onclick="document.body.dataset.clicked='cover'"
+				></div>
+			</body>
+		</html>
+		"""
+	)
+	session = CamoufoxSession(headless=True)
+
+	try:
+		await session.start()
+		await session.navigate_to(fixture.as_uri())
+		page = await session.get_current_page()
+		rect = await page.locator('#blocked').bounding_box()
+		assert rect is not None
+
+		click_event = ClickCoordinateEvent(coordinate_x=int(rect['x'] + 8), coordinate_y=int(rect['y'] + 8))
+		with pytest.raises(RuntimeError, match='hit target mismatch'):
+			await session.on_ClickCoordinateEvent(click_event)
+
+		assert await page.locator('body').get_attribute('data-clicked') is None
+	finally:
+		await session.stop()
+
+
+@pytest.mark.anyio
+async def test_nested_scroll_container_scrolls_then_clicks_target(tmp_path: Path):
+	fixture = tmp_path / 'nested-scroll-click.html'
+	fixture.write_text(
+		"""
+		<html>
+			<body>
+				<div
+					id="results-pane"
+					style="height: 120px; width: 320px; overflow: auto; border: 1px solid black"
+					aria-label="Results pane"
+				>
+					<div style="height: 420px"></div>
+					<button id="load-more" onclick="this.textContent='Loaded more results'">Load more results</button>
+				</div>
+			</body>
+		</html>
+		"""
+	)
+	session = CamoufoxSession(headless=True)
+
+	try:
+		await session.start()
+		await session.navigate_to(fixture.as_uri())
+		state_event = session.event_bus.dispatch(BrowserStateRequestEvent(include_dom=True, include_screenshot=False))
+		await state_event
+		state = await state_event.event_result()
+		button = next(
+			node for node in state.dom_state.selector_map.values() if node.attributes.get('id') == 'load-more'
+		)
+
+		await session.on_ScrollEvent(ScrollEvent(direction='down', amount=500, node=button))
+		await session.on_ClickElementEvent(ClickElementEvent(node=button))
+
+		page = await session.get_current_page()
+		assert await page.locator('#load-more').text_content() == 'Loaded more results'
+		diagnostics = session.last_click_diagnostics
+		assert diagnostics is not None
+		assert diagnostics['action_plan']['preconditions']['hit_target_validated'] is True
 	finally:
 		await session.stop()

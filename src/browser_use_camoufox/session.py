@@ -465,6 +465,22 @@ class CamoufoxSession(BrowserSession):
 		if frame_detach_retry:
 			fallback_attempted.append('frame_detach_retry')
 		click_failed = False
+		hit_target = await self._click_hit_target_diagnostics(node)
+		if not hit_target.get('matches'):
+			after = await self._capture_click_state(node)
+			diagnostics = self._click_change_diagnostics(before, after)
+			diagnostics['fallback'] = {'attempted': fallback_attempted, 'result': 'blocked_by_top_layer'}
+			diagnostics['action_plan'] = self._click_action_plan_diagnostics(
+				node=node,
+				button=event.button,
+				attempted_steps=fallback_attempted,
+				result='blocked_by_top_layer',
+				diagnostics=diagnostics,
+				hit_target=hit_target,
+				frame_detach_retry=frame_detach_retry,
+			)
+			object.__setattr__(self, '_last_click_diagnostics', diagnostics)
+			raise RuntimeError(self._blocked_click_error_message(node, hit_target))
 		try:
 			locator = self._locator_for_node(node)
 			await locator.click(button=event.button, timeout=CLICK_TIMEOUT_MS)
@@ -523,6 +539,7 @@ class CamoufoxSession(BrowserSession):
 			attempted_steps=fallback_attempted,
 			result=fallback_result,
 			diagnostics=diagnostics,
+			hit_target=hit_target,
 			frame_detach_retry=frame_detach_retry,
 		)
 		object.__setattr__(self, '_last_click_diagnostics', diagnostics)
@@ -540,6 +557,9 @@ class CamoufoxSession(BrowserSession):
 
 	async def on_ClickCoordinateEvent(self, event: ClickCoordinateEvent) -> dict[str, int]:
 		page = await self._ensure_page()
+		hit_target = await self._coordinate_hit_target_diagnostics(event.coordinate_x, event.coordinate_y)
+		if not hit_target.get('safe'):
+			raise RuntimeError(f'Camoufox coordinate click rejected: hit target mismatch; hit_target={hit_target}')
 		await page.mouse.click(event.coordinate_x, event.coordinate_y, button=event.button)
 		return {'click_x': event.coordinate_x, 'click_y': event.coordinate_y}
 
@@ -1795,6 +1815,78 @@ class CamoufoxSession(BrowserSession):
 		details.append(f'playwright_error={str(exc).splitlines()[0]}')
 		return '; '.join(details)
 
+	def _blocked_click_error_message(self, node: EnhancedDOMTreeNode, hit_target: dict[str, Any]) -> str:
+		return (
+			f'Camoufox click failed after {CLICK_TIMEOUT_MS}ms; node={node.node_id}; '
+			f'fallback_attempted={["click"]}; fallback_result=blocked_by_top_layer; hit_target={hit_target}'
+		)
+
+	async def _click_hit_target_diagnostics(self, node: EnhancedDOMTreeNode) -> dict[str, Any]:
+		try:
+			return cast(
+				dict[str, Any],
+				await self._locator_for_node(node).evaluate(
+					"""element => {
+						const rect = element.getBoundingClientRect();
+						const x = rect.left + rect.width / 2;
+						const y = rect.top + rect.height / 2;
+						const hit = document.elementFromPoint(x, y);
+						const describe = (candidate) => {
+							if (!candidate) return null;
+							const text = (candidate.innerText || candidate.textContent || '')
+								.replace(/\\s+/g, ' ')
+								.trim();
+							return {
+								tag: candidate.tagName.toLowerCase(),
+								id: candidate.id || '',
+								role: candidate.getAttribute('role') || '',
+								label: candidate.getAttribute('aria-label') || '',
+								text: text.slice(0, 80),
+							};
+						};
+						return {
+							matches: hit === element || element.contains(hit),
+							point: {x: Math.round(x), y: Math.round(y)},
+							target: describe(element),
+							hit: describe(hit),
+						};
+					}"""
+				),
+			)
+		except Error:
+			return {'matches': True, 'unavailable': True}
+
+	async def _coordinate_hit_target_diagnostics(self, x: int, y: int) -> dict[str, Any]:
+		page = await self._ensure_page()
+		return cast(
+			dict[str, Any],
+			await page.evaluate(
+				"""point => {
+					const hit = document.elementFromPoint(point.x, point.y);
+					if (!hit) return {safe: false, reason: 'no_hit_target'};
+					const tag = hit.tagName.toLowerCase();
+					const role = (hit.getAttribute('role') || '').toLowerCase();
+					const interactive = (
+						['button', 'a', 'input', 'select', 'textarea', 'option'].includes(tag)
+						|| ['button', 'link', 'menuitem', 'option', 'tab'].includes(role)
+					);
+					const text = (hit.innerText || hit.textContent || '').replace(/\\s+/g, ' ').trim();
+					return {
+						safe: interactive,
+						reason: interactive ? 'interactive_hit_target' : 'non_interactive_hit_target',
+						hit: {
+							tag,
+							id: hit.id || '',
+							role,
+							label: hit.getAttribute('aria-label') || '',
+							text: text.slice(0, 80),
+						},
+					};
+				}""",
+				{'x': x, 'y': y},
+			),
+		)
+
 	def _can_keyboard_activate(self, node: EnhancedDOMTreeNode) -> bool:
 		if node.attributes.get('data-browser-use-camoufox-disabled') == 'true':
 			return False
@@ -2007,6 +2099,7 @@ class CamoufoxSession(BrowserSession):
 		attempted_steps: list[str],
 		result: str,
 		diagnostics: dict[str, Any],
+		hit_target: dict[str, Any] | None = None,
 		frame_detach_retry: bool = False,
 	) -> dict[str, Any]:
 		strategy = 'direct_click'
@@ -2026,19 +2119,27 @@ class CamoufoxSession(BrowserSession):
 				and node.attributes.get(OBSERVABLE_ELEMENT_ATTRIBUTE) != 'true',
 				'selector_available': bool(node.attributes.get('data-browser-use-camoufox-selector')),
 				'frame_retry': frame_detach_retry,
+				'hit_target_validated': bool((hit_target or {}).get('matches')),
 			},
 			'attempted_steps': list(attempted_steps),
 			'result': result,
 			'no_change_reason': None
 			if self._click_state_changed(diagnostics)
-			else self._classify_click_no_change_reason(node, attempted_steps),
+			else self._classify_click_no_change_reason(node, attempted_steps, hit_target),
 		}
 
-	def _classify_click_no_change_reason(self, node: EnhancedDOMTreeNode, attempted_steps: list[str]) -> str:
+	def _classify_click_no_change_reason(
+		self,
+		node: EnhancedDOMTreeNode,
+		attempted_steps: list[str],
+		hit_target: dict[str, Any] | None = None,
+	) -> str:
 		if node.attributes.get('data-browser-use-camoufox-disabled') == 'true':
 			return 'target_disabled'
 		if node.attributes.get(OBSERVABLE_ELEMENT_ATTRIBUTE) == 'true':
 			return 'target_observable_only'
+		if hit_target is not None and not hit_target.get('matches'):
+			return 'click_blocked_by_top_layer'
 		if attempted_steps[-1] != 'click':
 			return f'{attempted_steps[-1]}_produced_no_observable_change'
 		return 'click_produced_no_observable_change'

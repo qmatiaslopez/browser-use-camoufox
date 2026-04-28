@@ -2291,6 +2291,11 @@ class CamoufoxSession(BrowserSession):
 					'ul', 'ol', '[role="grid"]', 'table',
 				].join(', ');
 				const gridContainerSelector = '[role="grid"], table';
+				const keyboardClusterSelector = [
+					'[role="group"]', '[role="toolbar"]', '[role="application"]',
+					'[aria-label*="keyboard" i]', '[aria-label*="keypad" i]', '[id*="keyboard" i]',
+					'[class*="keyboard" i]', '[class*="keypad" i]',
+				].join(', ');
 				const repeatedChromeContainers = [
 					'nav', 'aside', 'header', 'footer', '[role="navigation"]', '[aria-label*="filter" i]',
 				].join(', ');
@@ -2363,6 +2368,10 @@ class CamoufoxSession(BrowserSession):
 					if (element.matches(gridContainerSelector)) {
 						const gridSummary = summarizeGrid(element);
 						if (gridSummary) attributes['data-browser-use-camoufox-grid-summary'] = gridSummary;
+					}
+					if (element.matches(keyboardClusterSelector)) {
+						const keyboardSummary = summarizeKeyboardCluster(element);
+						if (keyboardSummary) attributes['data-browser-use-camoufox-keyboard-summary'] = keyboardSummary;
 					}
 					for (const attr of Array.from(element.attributes)) {
 						const value = safeAttributeValue(attr.name, attr.value);
@@ -2463,6 +2472,59 @@ class CamoufoxSession(BrowserSession):
 					return [`rows=${maxRow}`, `columns=${maxColumn}`, ...entries.slice(0, 24)]
 						.join('; ')
 						.slice(0, args.maxSemanticEvidenceLength);
+				};
+				const summarizeKeyboardCluster = (container) => {
+					const buttons = Array.from(container.querySelectorAll('button, [role="button"], [data-key]'))
+						.filter((button) => {
+							const rect = button.getBoundingClientRect();
+							const style = window.getComputedStyle(button);
+							return rect.width > 0 && rect.height > 0
+								&& style.visibility !== 'hidden' && style.display !== 'none';
+						})
+						.slice(0, 40);
+					if (buttons.length < 3) return '';
+					const rows = [];
+					for (const button of buttons) {
+						const rect = button.getBoundingClientRect();
+						let row = rows.find((candidate) => Math.abs(candidate.y - rect.y) <= 8);
+						if (!row) {
+							row = {y: rect.y, buttons: []};
+							rows.push(row);
+						}
+						row.buttons.push({element: button, x: rect.x});
+					}
+					rows.sort((left, right) => left.y - right.y);
+					const entries = rows.slice(0, 4).map((row, rowIndex) => {
+						const keys = row.buttons
+							.sort((left, right) => left.x - right.x)
+							.slice(0, 14)
+							.map(({element}) => {
+								const label = normalizeText(
+									element.getAttribute('data-key')
+									|| element.innerText
+									|| element.textContent
+									|| element.getAttribute('aria-label')
+									|| ''
+								).slice(0, 12);
+								if (!label) return '';
+								const states = [];
+								const state = normalizeText(
+									element.getAttribute('data-state')
+									|| element.getAttribute('aria-pressed')
+									|| element.getAttribute('aria-selected')
+									|| ''
+								).slice(0, 16);
+								if (state) states.push(state);
+								if (element.disabled === true || element.getAttribute('aria-disabled') === 'true') {
+									states.push('disabled');
+								}
+								return `${label}${states.length ? `(${states.join(',')})` : ''}`;
+							})
+							.filter(Boolean);
+						return keys.length ? `row${rowIndex + 1}=${keys.join(' ')}` : '';
+					}).filter(Boolean);
+					if (!entries.length) return '';
+					return entries.join('; ').slice(0, args.maxSemanticEvidenceLength);
 				};
 				const domRoot = document.body || document;
 				const elements = Array.from(domRoot.querySelectorAll('*'))

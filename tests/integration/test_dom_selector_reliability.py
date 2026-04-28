@@ -598,7 +598,7 @@ async def test_visual_grid_and_keyboard_fixtures_expose_visible_state(tmp_path: 
 				<section id="keyboard" aria-label="Keyboard">
 					<button data-key="A" data-state="correct">A</button>
 					<button data-key="B" data-state="present">B</button>
-					<button data-key="C" disabled data-state="absent">C</button>
+					<div></div><button data-key="C" disabled data-state="absent">C</button>
 				</section>
 			</body>
 		</html>
@@ -629,9 +629,15 @@ async def test_visual_grid_and_keyboard_fixtures_expose_visible_state(tmp_path: 
 			('C', 'absent'),
 		]
 		assert 'aria-label=A correct' in state.dom_state.llm_representation()
+		keyboard = next(
+			node for node in state.dom_state.selector_map.values() if node.attributes.get('id') == 'keyboard'
+		)
+		keyboard_summary = keyboard.attributes.get('data-browser-use-camoufox-keyboard-summary', '')
 		assert [key.attributes['data-key'] for key in keys] == ['A', 'B', 'C']
 		assert 'rows=2; columns=2' in grid_summary
 		assert 'r1c1=A(correct)' in grid_summary
 		assert 'r2c2=D(empty)' in grid_summary
+		assert 'row1=A(correct) B(present)' in keyboard_summary
+		assert 'row2=C(absent,disabled)' in keyboard_summary
 	finally:
 		await session.stop()

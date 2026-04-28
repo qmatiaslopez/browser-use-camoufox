@@ -138,13 +138,13 @@ IMPORTANT: When a task is fully completed and its verification commands pass, up
     - `tests/integration/test_dom_selector_reliability.py`
     - `tests/parity/test_chrome_camoufox_dom_parity.py`
 
-- [ ] Task 9: Detect virtual keyboard/button clusters
+- [x] Task 9: Detect virtual keyboard/button clusters
   - Acceptance:
-    - [ ] Generic virtual-keyboard fixture exposes grouped rows and button states.
-    - [ ] Keyboard-like clusters are bounded and do not flood normal pages.
-    - [ ] Click/send_keys behavior remains unchanged unless the agent chooses visible controls.
+    - [x] Generic virtual-keyboard fixture exposes grouped rows and button states.
+    - [x] Keyboard-like clusters are bounded and do not flood normal pages.
+    - [x] Click/send_keys behavior remains unchanged unless the agent chooses visible controls.
   - Verify:
-    - [ ] `uv run pytest -q tests/integration/test_interaction_events.py tests/integration/test_dom_selector_reliability.py`
+    - [x] `uv run pytest -q tests/integration/test_interaction_events.py tests/integration/test_dom_selector_reliability.py`
     - [ ] Targeted run includes `wordle_solve_visible_feedback` after implementation.
   - Dependencies: Task 8
   - Files:

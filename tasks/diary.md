@@ -12,3 +12,6 @@
 - Completed Task 3 grouped card/list extraction.
 - `find_elements` now emits compact grouped evidence for card-like results, including title, primary link, price-like visible metadata, and actions while preserving existing child evidence.
 - Validators passed: `uv run ruff check src tests scripts`, `uv run ruff format --check src tests scripts`, `uv run pyright`, `uv run pytest -q tests/parity/test_search_extract_screenshot.py tests/integration/test_dom_selector_reliability.py`, and `uv build`.
+- Completed Task 4 grouped evidence for action relocalization diagnostics.
+- Existing stale-index coverage confirms repeated-card relocalization preserves the intended grouped action and ambiguous duplicates fail with bounded ranked diagnostics.
+- Validators passed: `uv run pytest -q tests/parity/test_stale_indexes.py tests/integration/test_dom_selector_reliability.py`, `uv run ruff check src tests scripts`, `uv run ruff format --check src tests scripts`, `uv run pyright`, and `uv build`.

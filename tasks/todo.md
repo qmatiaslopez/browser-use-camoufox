@@ -55,13 +55,13 @@ IMPORTANT: When a task is fully completed and its verification commands pass, up
     - `tests/parity/test_search_extract_screenshot.py`
     - `tests/integration/test_dom_selector_reliability.py`
 
-- [ ] Task 4: Add grouped evidence to action relocalization diagnostics
+- [x] Task 4: Add grouped evidence to action relocalization diagnostics
   - Acceptance:
-    - [ ] Repeated-card fixture relocalizes the correct action using group context.
-    - [ ] Ambiguous repeated groups are rejected with ranked diagnostics.
-    - [ ] Diagnostics remain safe and size-bounded.
+    - [x] Repeated-card fixture relocalizes the correct action using group context.
+    - [x] Ambiguous repeated groups are rejected with ranked diagnostics.
+    - [x] Diagnostics remain safe and size-bounded.
   - Verify:
-    - [ ] `uv run pytest -q tests/parity/test_stale_indexes.py tests/integration/test_dom_selector_reliability.py`
+    - [x] `uv run pytest -q tests/parity/test_stale_indexes.py tests/integration/test_dom_selector_reliability.py`
   - Dependencies: Task 3
   - Files:
     - `src/browser_use_camoufox/session.py`

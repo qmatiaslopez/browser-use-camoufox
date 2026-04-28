@@ -76,13 +76,13 @@ IMPORTANT: When a task is fully completed and its verification commands pass, up
 
 ## Phase 3: General Action Planner and Overlay Recovery
 
-- [ ] Task 5: Introduce conservative action planner diagnostics
+- [x] Task 5: Introduce conservative action planner diagnostics
   - Acceptance:
-    - [ ] Existing click/keyboard/form/autocomplete/frame-detach behavior is represented as action-plan steps.
-    - [ ] Last-click diagnostics include strategy, preconditions, attempted steps, and classified no-change reason.
-    - [ ] No behavior regresses for current integration and parity tests.
+    - [x] Existing click/keyboard/form/autocomplete/frame-detach behavior is represented as action-plan steps.
+    - [x] Last-click diagnostics include strategy, preconditions, attempted steps, and classified no-change reason.
+    - [x] No behavior regresses for current integration and parity tests.
   - Verify:
-    - [ ] `uv run pytest -q tests/integration/test_interaction_events.py tests/parity/test_stale_indexes.py tests/parity/test_iframe_dom.py`
+    - [x] `uv run pytest -q tests/integration/test_interaction_events.py tests/parity/test_stale_indexes.py tests/parity/test_iframe_dom.py`
   - Dependencies: Tasks 1-2
   - Files:
     - `src/browser_use_camoufox/session.py`

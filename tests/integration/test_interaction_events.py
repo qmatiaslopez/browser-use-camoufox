@@ -139,6 +139,11 @@ async def test_click_records_bounded_post_click_change_diagnostics(tmp_path: Pat
 		assert diagnostics['target_attributes']['before']['data-state'] == 'ready'
 		assert diagnostics['target_attributes']['after']['data-state'] == 'done'
 		assert 'data-token' not in diagnostics['target_attributes']['before']
+		assert diagnostics['action_plan']['strategy'] == 'direct_click'
+		assert diagnostics['action_plan']['preconditions']['button'] == 'left'
+		assert diagnostics['action_plan']['preconditions']['interactable'] is True
+		assert diagnostics['action_plan']['attempted_steps'] == ['click']
+		assert diagnostics['action_plan']['no_change_reason'] is None
 	finally:
 		await session.stop()
 
@@ -192,6 +197,9 @@ async def test_click_recovers_when_primary_click_times_out_but_keyboard_activati
 		assert diagnostics is not None
 		assert diagnostics['fallback']['attempted'] == ['click', 'keyboard_activation']
 		assert diagnostics['fallback']['result'] == 'keyboard_activation_succeeded'
+		assert diagnostics['action_plan']['strategy'] == 'click_with_keyboard_recovery'
+		assert diagnostics['action_plan']['attempted_steps'] == ['click', 'keyboard_activation']
+		assert diagnostics['action_plan']['no_change_reason'] is None
 	finally:
 		await session.stop()
 
@@ -254,6 +262,9 @@ async def test_click_recovers_with_associated_form_submit_when_activation_does_n
 		assert diagnostics is not None
 		assert diagnostics['fallback']['attempted'] == ['click', 'keyboard_activation', 'form_submit']
 		assert diagnostics['fallback']['result'] == 'form_submit_succeeded'
+		assert diagnostics['action_plan']['strategy'] == 'click_with_form_submit_recovery'
+		assert diagnostics['action_plan']['attempted_steps'] == ['click', 'keyboard_activation', 'form_submit']
+		assert diagnostics['action_plan']['no_change_reason'] is None
 	finally:
 		await session.stop()
 
@@ -316,6 +327,9 @@ async def test_click_recovers_visible_autocomplete_option_after_no_change(tmp_pa
 		assert diagnostics is not None
 		assert diagnostics['fallback']['attempted'] == ['click', 'autocomplete_option']
 		assert diagnostics['fallback']['result'] == 'autocomplete_option_succeeded'
+		assert diagnostics['action_plan']['strategy'] == 'click_with_autocomplete_recovery'
+		assert diagnostics['action_plan']['attempted_steps'] == ['click', 'autocomplete_option']
+		assert diagnostics['action_plan']['no_change_reason'] is None
 	finally:
 		await session.stop()
 

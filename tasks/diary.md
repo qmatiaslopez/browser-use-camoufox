@@ -15,3 +15,6 @@
 - Completed Task 4 grouped evidence for action relocalization diagnostics.
 - Existing stale-index coverage confirms repeated-card relocalization preserves the intended grouped action and ambiguous duplicates fail with bounded ranked diagnostics.
 - Validators passed: `uv run pytest -q tests/parity/test_stale_indexes.py tests/integration/test_dom_selector_reliability.py`, `uv run ruff check src tests scripts`, `uv run ruff format --check src tests scripts`, `uv run pyright`, and `uv build`.
+- Completed Task 5 conservative action planner diagnostics.
+- Last-click diagnostics now include bounded action-plan strategy, preconditions, attempted steps, result, and classified no-change reason while preserving existing click, keyboard, autocomplete, form-submit, and frame-detach behavior.
+- Validators passed: `uv run pytest -q tests/integration/test_interaction_events.py tests/parity/test_stale_indexes.py tests/parity/test_iframe_dom.py`, `uv run ruff check src tests scripts`, `uv run ruff format --check src tests scripts`, `uv run pyright`, and `uv build`.

@@ -521,6 +521,14 @@ class CamoufoxSession(BrowserSession):
 			'attempted': fallback_attempted,
 			'result': fallback_result,
 		}
+		diagnostics['action_plan'] = self._click_action_plan_diagnostics(
+			node=node,
+			button=event.button,
+			attempted_steps=fallback_attempted,
+			result=fallback_result,
+			diagnostics=diagnostics,
+			frame_detach_retry=frame_detach_retry,
+		)
 		object.__setattr__(self, '_last_click_diagnostics', diagnostics)
 		if (
 			click_failed
@@ -1952,6 +1960,49 @@ class CamoufoxSession(BrowserSession):
 				'changed': before_attrs != after_attrs,
 			},
 		}
+
+	def _click_action_plan_diagnostics(
+		self,
+		node: EnhancedDOMTreeNode,
+		button: str,
+		attempted_steps: list[str],
+		result: str,
+		diagnostics: dict[str, Any],
+		frame_detach_retry: bool = False,
+	) -> dict[str, Any]:
+		strategy = 'direct_click'
+		if frame_detach_retry:
+			strategy = 'click_with_frame_relocalization'
+		elif attempted_steps[-1] == 'autocomplete_option':
+			strategy = 'click_with_autocomplete_recovery'
+		elif attempted_steps[-1] == 'form_submit':
+			strategy = 'click_with_form_submit_recovery'
+		elif attempted_steps[-1] == 'keyboard_activation':
+			strategy = 'click_with_keyboard_recovery'
+		return {
+			'strategy': strategy,
+			'preconditions': {
+				'button': button,
+				'interactable': node.attributes.get('data-browser-use-camoufox-disabled') != 'true'
+				and node.attributes.get(OBSERVABLE_ELEMENT_ATTRIBUTE) != 'true',
+				'selector_available': bool(node.attributes.get('data-browser-use-camoufox-selector')),
+				'frame_retry': frame_detach_retry,
+			},
+			'attempted_steps': list(attempted_steps),
+			'result': result,
+			'no_change_reason': None
+			if self._click_state_changed(diagnostics)
+			else self._classify_click_no_change_reason(node, attempted_steps),
+		}
+
+	def _classify_click_no_change_reason(self, node: EnhancedDOMTreeNode, attempted_steps: list[str]) -> str:
+		if node.attributes.get('data-browser-use-camoufox-disabled') == 'true':
+			return 'target_disabled'
+		if node.attributes.get(OBSERVABLE_ELEMENT_ATTRIBUTE) == 'true':
+			return 'target_observable_only'
+		if attempted_steps[-1] != 'click':
+			return f'{attempted_steps[-1]}_produced_no_observable_change'
+		return 'click_produced_no_observable_change'
 
 	def _click_state_changed(self, diagnostics: dict[str, Any]) -> bool:
 		target_attributes = cast(dict[str, Any], diagnostics.get('target_attributes') or {})

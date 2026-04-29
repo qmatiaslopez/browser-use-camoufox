@@ -13,9 +13,10 @@ Run [`browser-use`](https://github.com/browser-use/browser-use) agents on [Camou
 ## Highlights
 
 - Camoufox-backed `BrowserSession` for Browser-Use agents.
-- Tool overrides for search, DOM queries, JavaScript evaluation, scrolling, screenshots, PDF export, dropdowns, uploads, and MCP/session helpers.
+- Tool overrides for navigation, click, search, DOM queries, JavaScript evaluation, scrolling, screenshots, PDF export, dropdowns, uploads, and MCP/session helpers.
 - Context support for downloads, storage state, extra headers, init scripts, permissions, geolocation, HAR recording, and video recording.
 - Stable DOM selector extraction with visibility, disabled-state, ordinal, iframe, and open shadow-root metadata.
+- Bounded click/navigation diagnostics for stale targets, top-layer interception, no-change clicks, and committed navigations that outlive Playwright timeouts.
 - Explicit unsupported-boundary errors instead of fake CDP shims.
 
 ## Install
@@ -106,3 +107,7 @@ Runtime smoke checks require the Camoufox browser build:
 uv run camoufox fetch
 uv run browser-use-camoufox doctor --runtime-smoke
 ```
+
+## Real-world benchmark semantics
+
+`scripts/real_world_kit.py` is a live validation harness for Chrome and Camoufox. A mission passes only when the agent itself finishes with `done(success=True)` and the verifier also passes. Verifier evidence is diagnostic; it must not be converted into synthetic agent success after `Agent.run()`.

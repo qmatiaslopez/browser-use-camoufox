@@ -281,6 +281,50 @@ def test_scrub_redacts_sensitive_keys_and_tokens(monkeypatch):
 	}
 
 
+@pytest.mark.anyio
+async def test_generic_visible_final_terms_can_be_grounded_in_visible_evidence(monkeypatch):
+	mission = real_world_kit.Mission(
+		id='visible_evidence_final_terms',
+		name='Visible evidence final terms',
+		url='https://example.com/',
+		task='Find a visible result.',
+		success_criteria='Visible result evidence is present.',
+		max_steps=2,
+		timeout_seconds=30,
+		domains=('example.com',),
+		final_terms=('mouse',),
+		requires_price=True,
+	)
+
+	class Page:
+		pass
+
+	async def page_url(_session, _page):
+		return 'https://example.com/results'
+
+	async def page_title(_session, _page):
+		return 'Search results'
+
+	async def evaluate_page(_page, _script):
+		return 'Wireless mouse listing UYU 1,234.00'
+
+	async def get_current_page(_session):
+		return Page()
+
+	monkeypatch.setattr(real_world_kit, 'get_current_page', get_current_page)
+	monkeypatch.setattr(real_world_kit, 'page_url', page_url)
+	monkeypatch.setattr(real_world_kit, 'page_title', page_title)
+	monkeypatch.setattr(real_world_kit, 'evaluate_page', evaluate_page)
+
+	verification = await real_world_kit.verify_generic_visible(
+		mission,
+		object(),
+		'Clicked Search and reached the results page with visible evidence.',
+	)
+
+	assert verification.passed is True
+
+
 def test_mission_report_diagnostics_classify_runtime_tooling_failure():
 	report = real_world_kit.enrich_mission_report(
 		{
@@ -371,6 +415,190 @@ def test_mission_report_includes_bounded_action_plan_diagnostics_when_available(
 	]
 	assert report['failure_class'] == 'model/navigation'
 	assert 'secret-token' not in json.dumps(report)
+
+
+def test_real_world_benchmark_requires_agent_success_even_when_verifier_passes(monkeypatch):
+	created_agents: list[dict[str, Any]] = []
+	verify_calls = 0
+
+	class StubAgent:
+		def __init__(self, **kwargs):
+			created_agents.append(kwargs)
+			self.kwargs = kwargs
+
+		async def run(self, *, max_steps: int):
+			class History:
+				def is_done(self):
+					return False
+
+				def is_successful(self):
+					return None
+
+				def final_result(self):
+					return 'visible benchmark evidence with required term and enough detail'
+
+				def errors(self):
+					return []
+
+				def action_names(self):
+					return ['done']
+
+				def urls(self):
+					return []
+
+				def number_of_steps(self):
+					return 1
+
+			return History()
+
+	class StubSession:
+		last_click_diagnostics = {}
+		last_keyboard_diagnostics = {}
+
+		async def get_current_page_url(self):
+			return 'https://example.com/results'
+
+		async def get_current_page_title(self):
+			return 'Example results'
+
+		async def get_tabs(self):
+			return []
+
+		async def stop(self):
+			return None
+
+	mission = real_world_kit.MISSIONS['ebay_product_filter']
+
+	async def stub_verify_mission(_mission, _session, _final_result):
+		nonlocal verify_calls
+		verify_calls += 1
+		return real_world_kit.Verification(
+			passed=True,
+			details={
+				'domain_ok': True,
+				'visible_ok': True,
+				'final_ok': True,
+				'history_ok': True,
+				'price_ok': True,
+			},
+			errors=[],
+		)
+
+	monkeypatch.setattr(real_world_kit, 'Agent', StubAgent)
+	monkeypatch.setattr(real_world_kit, 'build_llm', lambda **_kwargs: object())
+	monkeypatch.setattr(real_world_kit, 'build_tools', lambda **_kwargs: object())
+	monkeypatch.setattr(real_world_kit, 'build_browser_session', lambda **_kwargs: StubSession())
+	monkeypatch.setattr(real_world_kit, 'verify_mission', stub_verify_mission)
+	monkeypatch.setattr(real_world_kit, 'capture_final_state', lambda _session: {})
+
+	import anyio
+
+	result = anyio.run(
+		partial(
+			real_world_kit.run_mission,
+			mission,
+			model='test-model',
+			base_url='http://localhost.test/v1',
+			headless=True,
+			runtime='camoufox',
+			chrome_executable=Path('/tmp/chrome'),
+			pause_after_task=0,
+		)
+	)
+
+	assert created_agents[0]['max_actions_per_step'] == 3
+	assert 'only action in that step' in created_agents[0]['task']
+	assert 'Do not just wait or inspect controls' in created_agents[0]['task']
+	assert 'prior action memory contains the required evidence' in created_agents[0]['task']
+	assert verify_calls == 1
+	assert result['passed'] is False
+	assert result['history']['is_done'] is False
+	assert result['history']['is_successful'] is None
+
+
+def test_real_world_benchmark_does_not_override_failed_done(monkeypatch):
+	agent_instances = []
+	verify_calls = 0
+
+	class StubAgent:
+		def __init__(self, **kwargs):
+			agent_instances.append(self)
+			self.kwargs = kwargs
+
+		async def run(self, *, max_steps: int):
+			class History:
+				def is_done(self):
+					return True
+
+				def is_successful(self):
+					return False
+
+				def final_result(self):
+					return 'Playwright and Selenium were both visited with visible article evidence.'
+
+				def errors(self):
+					return []
+
+				def action_names(self):
+					return ['done']
+
+				def urls(self):
+					return []
+
+				def number_of_steps(self):
+					return 1
+
+			return History()
+
+	class StubSession:
+		last_click_diagnostics = {}
+		last_keyboard_diagnostics = {}
+
+		async def stop(self):
+			return None
+
+	async def stub_verify_mission(_mission, _session, _final_result):
+		nonlocal verify_calls
+		verify_calls += 1
+		return real_world_kit.Verification(
+			passed=True,
+			details={
+				'domain_ok': True,
+				'visible_ok': True,
+				'final_ok': True,
+				'history_ok': True,
+				'price_ok': True,
+			},
+			errors=[],
+		)
+
+	monkeypatch.setattr(real_world_kit, 'Agent', StubAgent)
+	monkeypatch.setattr(real_world_kit, 'build_llm', lambda **_kwargs: object())
+	monkeypatch.setattr(real_world_kit, 'build_tools', lambda **_kwargs: object())
+	monkeypatch.setattr(real_world_kit, 'build_browser_session', lambda **_kwargs: StubSession())
+	monkeypatch.setattr(real_world_kit, 'verify_mission', stub_verify_mission)
+	monkeypatch.setattr(real_world_kit, 'capture_final_state', lambda _session: {})
+
+	import anyio
+
+	result = anyio.run(
+		partial(
+			real_world_kit.run_mission,
+			real_world_kit.MISSIONS['wiki_compare_articles'],
+			model='test-model',
+			base_url='http://localhost.test/v1',
+			headless=True,
+			runtime='camoufox',
+			chrome_executable=Path('/tmp/chrome'),
+			pause_after_task=0,
+		)
+	)
+
+	assert result['passed'] is False
+	assert verify_calls == 1
+	assert result['history']['is_done'] is True
+	assert result['history']['is_successful'] is False
+	assert agent_instances[0].kwargs.get('register_should_stop_callback') is None
 
 
 def test_benchmark_stack_has_five_families_three_variations_and_real_sites():

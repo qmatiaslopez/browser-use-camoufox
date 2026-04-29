@@ -1,5 +1,7 @@
+import asyncio
 import json
 import re
+import time
 from collections.abc import Awaitable
 from functools import wraps
 from pathlib import Path
@@ -43,8 +45,10 @@ from browser_use.dom.views import (
 )
 from browser_use.tools.service import Tools
 from browser_use.tools.views import (
+	ClickElementActionIndexOnly,
 	FindElementsAction,
 	GetDropdownOptionsAction,
+	NavigateAction,
 	SaveAsPdfAction,
 	ScreenshotAction,
 	ScrollAction,
@@ -100,6 +104,13 @@ SENSITIVE_ATTRIBUTE_MARKERS = (
 	'token',
 )
 CLICK_TIMEOUT_MS = 5_000
+DEFAULT_NAVIGATION_TIMEOUT_MS = 30_000
+NAVIGATION_READINESS_TIMEOUT_MS = 5_000
+CLICK_SCROLL_TIMEOUT_MS = 1_000
+FAST_CLICK_TIMEOUT_MS = 1_500
+DOM_CLICK_FALLBACK_TIMEOUT_MS = 1_000
+CLICK_STATE_ATTRIBUTE_TIMEOUT_MS = 500
+CLICK_STATE_BODY_TIMEOUT_MS = 1_000
 PLAYWRIGHT_SPECIAL_KEYS = frozenset(
 	{
 		'Alt',
@@ -161,6 +172,12 @@ def _no_fake_cdp_message(capability: str) -> str:
 UNSUPPORTED_PROFILE_MAPPINGS = frozenset({'traces_dir', 'proxy', 'disable_security', 'deterministic_rendering'})
 
 
+def _require_camoufox_session(browser_session: BrowserSession, action_name: str) -> 'CamoufoxSession':
+	if not isinstance(browser_session, CamoufoxSession):
+		raise RuntimeError(f'Camoufox {action_name} override requires CamoufoxSession.')
+	return browser_session
+
+
 def apply_camoufox_mcp_compat() -> None:
 	global _MCP_COMPAT_APPLIED
 	if _MCP_COMPAT_APPLIED:
@@ -216,79 +233,83 @@ def apply_camoufox_mcp_compat() -> None:
 
 
 def register_camoufox_tools(tools: Tools) -> None:
+	@tools.registry.action('', param_model=NavigateAction, terminates_sequence=True)
+	async def navigate(params: NavigateAction, browser_session: BrowserSession):
+		session = _require_camoufox_session(browser_session, 'navigate')
+		return await session.navigate_action(params.url, new_tab=params.new_tab)
+
+	@tools.registry.action(
+		'Click element by index.',
+		param_model=ClickElementActionIndexOnly,
+	)
+	async def click(params: ClickElementActionIndexOnly, browser_session: BrowserSession):
+		session = _require_camoufox_session(browser_session, 'click')
+		return await session.click_action(params)
+
 	@tools.registry.action(
 		'Search page text for a pattern without CDP when using Camoufox.',
 		param_model=SearchPageAction,
 	)
 	async def search_page(params: SearchPageAction, browser_session: BrowserSession):
-		if not isinstance(browser_session, CamoufoxSession):
-			raise RuntimeError('Camoufox search_page override requires CamoufoxSession.')
-		return await browser_session.search_page(params)
+		session = _require_camoufox_session(browser_session, 'search_page')
+		return await session.search_page(params)
 
 	@tools.registry.action(
 		'Query DOM elements by CSS selector without CDP when using Camoufox.',
 		param_model=FindElementsAction,
 	)
 	async def find_elements(params: FindElementsAction, browser_session: BrowserSession):
-		if not isinstance(browser_session, CamoufoxSession):
-			raise RuntimeError('Camoufox find_elements override requires CamoufoxSession.')
-		return await browser_session.find_elements(params)
+		session = _require_camoufox_session(browser_session, 'find_elements')
+		return await session.find_elements(params)
 
 	@tools.registry.action(
 		'Execute browser JavaScript without CDP when using Camoufox.',
 		terminates_sequence=True,
 	)
 	async def evaluate(code: str, browser_session: BrowserSession):
-		if not isinstance(browser_session, CamoufoxSession):
-			raise RuntimeError('Camoufox evaluate override requires CamoufoxSession.')
-		return await browser_session.evaluate_script(code)
+		session = _require_camoufox_session(browser_session, 'evaluate')
+		return await session.evaluate_script(code)
 
 	@tools.registry.action(
 		'Scroll by pages without CDP when using Camoufox.',
 		param_model=ScrollAction,
 	)
 	async def scroll(params: ScrollAction, browser_session: BrowserSession):
-		if not isinstance(browser_session, CamoufoxSession):
-			raise RuntimeError('Camoufox scroll override requires CamoufoxSession.')
-		return await browser_session.scroll_action(params)
+		session = _require_camoufox_session(browser_session, 'scroll')
+		return await session.scroll_action(params)
 
 	@tools.registry.action(
 		'Take a screenshot of the current viewport.',
 		param_model=ScreenshotAction,
 	)
 	async def screenshot(params: ScreenshotAction, browser_session: BrowserSession, file_system):
-		if not isinstance(browser_session, CamoufoxSession):
-			raise RuntimeError('Camoufox screenshot override requires CamoufoxSession.')
-		return await browser_session.screenshot_action(params, file_system)
+		session = _require_camoufox_session(browser_session, 'screenshot')
+		return await session.screenshot_action(params, file_system)
 
 	@tools.registry.action(
 		'Save the current page as a PDF file.',
 		param_model=SaveAsPdfAction,
 	)
 	async def save_as_pdf(params: SaveAsPdfAction, browser_session: BrowserSession, file_system):
-		if not isinstance(browser_session, CamoufoxSession):
-			raise RuntimeError('Camoufox save_as_pdf override requires CamoufoxSession.')
-		return await browser_session.save_as_pdf_action(params, file_system)
+		session = _require_camoufox_session(browser_session, 'save_as_pdf')
+		return await session.save_as_pdf_action(params, file_system)
 
 	@tools.registry.action('', param_model=GetDropdownOptionsAction)
 	async def dropdown_options(params: GetDropdownOptionsAction, browser_session: BrowserSession):
-		if not isinstance(browser_session, CamoufoxSession):
-			raise RuntimeError('Camoufox dropdown_options override requires CamoufoxSession.')
-		return await browser_session.dropdown_options_action(params)
+		session = _require_camoufox_session(browser_session, 'dropdown_options')
+		return await session.dropdown_options_action(params)
 
 	@tools.registry.action('Set the option of a <select> element.', param_model=SelectDropdownOptionAction)
 	async def select_dropdown(params: SelectDropdownOptionAction, browser_session: BrowserSession):
-		if not isinstance(browser_session, CamoufoxSession):
-			raise RuntimeError('Camoufox select_dropdown override requires CamoufoxSession.')
-		return await browser_session.select_dropdown_action(params)
+		session = _require_camoufox_session(browser_session, 'select_dropdown')
+		return await session.select_dropdown_action(params)
 
 	@tools.registry.action('', param_model=UploadFileAction)
 	async def upload_file(
 		params: UploadFileAction, browser_session: BrowserSession, available_file_paths: list[str], file_system
 	):
-		if not isinstance(browser_session, CamoufoxSession):
-			raise RuntimeError('Camoufox upload_file override requires CamoufoxSession.')
-		return await browser_session.upload_file_action(params, available_file_paths, file_system)
+		session = _require_camoufox_session(browser_session, 'upload_file')
+		return await session.upload_file_action(params, available_file_paths, file_system)
 
 
 class CamoufoxSession(BrowserSession):
@@ -320,6 +341,7 @@ class CamoufoxSession(BrowserSession):
 		self._browser: Browser | BrowserContext | None = None
 		self._context: BrowserContext | None = None
 		self._page: Page | None = None
+		self._known_page_count = 0
 		self._navigation_history: list[str] = []
 		self._navigation_history_index = -1
 		self._cached_selector_map: dict[int, EnhancedDOMTreeNode] = {}
@@ -340,6 +362,7 @@ class CamoufoxSession(BrowserSession):
 		self._browser = await self._camoufox.__aenter__()
 		self._context = await self._ensure_context(self._browser)
 		self._page = await self._context.new_page()
+		self._known_page_count = len(self._context.pages)
 
 	async def stop(self) -> None:
 		if self._context is not None:
@@ -352,6 +375,7 @@ class CamoufoxSession(BrowserSession):
 		self._browser = None
 		self._context = None
 		self._page = None
+		self._known_page_count = 0
 		self._navigation_history = []
 		self._navigation_history_index = -1
 
@@ -363,11 +387,35 @@ class CamoufoxSession(BrowserSession):
 		timeout_ms: int | None = None,
 	) -> None:
 		page = await self._ensure_page(new_tab=new_tab)
-		await page.goto(url, wait_until=wait_until, timeout=timeout_ms)
+		timeout = timeout_ms or DEFAULT_NAVIGATION_TIMEOUT_MS
+		try:
+			await page.goto(url, wait_until=wait_until, timeout=timeout)
+		except Error as exc:
+			if not await self._navigation_reached_url(page, url):
+				raise RuntimeError(f'Navigation failed for {url}: {str(exc).splitlines()[0]}') from exc
+		await self._wait_for_navigation_readiness(page)
 		if new_tab:
 			self._navigation_history = []
 			self._navigation_history_index = -1
 		self._record_navigation_url(page.url)
+
+	async def navigate_action(self, url: str, *, new_tab: bool = False) -> ActionResult:
+		before_url = await self.get_current_page_url()
+		try:
+			await self.navigate_to(url, new_tab=new_tab, wait_until='load', timeout_ms=DEFAULT_NAVIGATION_TIMEOUT_MS)
+		except RuntimeError:
+			page = await self._ensure_page()
+			if not await self._navigation_reached_url(page, url):
+				raise
+		after_url = await self.get_current_page_url()
+		after_title = await self.get_current_page_title()
+		text = f'Navigated to {after_url}'
+		memory = text
+		if after_title:
+			memory = f'Navigated to {after_title} at {after_url}'
+		if before_url != after_url:
+			memory = f'{memory}. Page changed from {before_url or "blank"} to {after_url}.'
+		return ActionResult(extracted_content=f'🔗 {text}', long_term_memory=memory)
 
 	async def on_NavigateToUrlEvent(self, event: NavigateToUrlEvent) -> None:
 		await self.navigate_to(
@@ -404,11 +452,13 @@ class CamoufoxSession(BrowserSession):
 			return None
 		if event.target_id is None:
 			self._page = self._context.pages[-1] if self._context.pages else None
+			self._known_page_count = len(self._context.pages)
 			return self._tab_target_id(len(self._context.pages) - 1) if self._page is not None else None
 		for index, page in enumerate(self._context.pages):
 			if self._tab_target_matches(index, event.target_id):
 				self._page = page
 				await page.bring_to_front()
+				self._known_page_count = len(self._context.pages)
 				return self._tab_target_id(index)
 		return None
 
@@ -423,6 +473,7 @@ class CamoufoxSession(BrowserSession):
 				remaining_pages = self._context.pages
 				if was_current:
 					self._page = remaining_pages[min(index, len(remaining_pages) - 1)] if remaining_pages else None
+				self._known_page_count = len(remaining_pages)
 				return
 
 	async def on_BrowserStateRequestEvent(self, event: BrowserStateRequestEvent) -> BrowserStateSummary:
@@ -460,13 +511,38 @@ class CamoufoxSession(BrowserSession):
 				raise
 			node = await self._retry_frame_detach_relocalization(event.node)
 			frame_detach_retry = True
-		before = await self._capture_click_state(node)
 		fallback_attempted = ['click']
 		if frame_detach_retry:
 			fallback_attempted.append('frame_detach_retry')
+		locator = self._locator_for_node(node)
+		try:
+			await locator.evaluate(
+				'element => element.scrollIntoView({block: "center", inline: "center"})',
+				timeout=CLICK_SCROLL_TIMEOUT_MS,
+			)
+		except Error as exc:
+			raise RuntimeError(self._click_error_message(node, exc, fallback_attempted, 'failed')) from exc
+		before = await self._capture_click_state(node)
 		click_failed = False
 		hit_target = await self._click_hit_target_diagnostics(node)
 		if not hit_target.get('matches'):
+			if event.button == 'left' and await self._can_select_autocomplete_option(node):
+				fallback_attempted.append('autocomplete_option')
+				await self._select_autocomplete_option(node)
+				after = await self._capture_click_state(node)
+				diagnostics = self._click_change_diagnostics(before, after)
+				diagnostics['fallback'] = {'attempted': fallback_attempted, 'result': 'autocomplete_option_succeeded'}
+				diagnostics['action_plan'] = self._click_action_plan_diagnostics(
+					node=node,
+					button=event.button,
+					attempted_steps=fallback_attempted,
+					result='autocomplete_option_succeeded',
+					diagnostics=diagnostics,
+					hit_target={'matches': True, 'recovered_from': hit_target},
+					frame_detach_retry=frame_detach_retry,
+				)
+				object.__setattr__(self, '_last_click_diagnostics', diagnostics)
+				return None
 			after = await self._capture_click_state(node)
 			diagnostics = self._click_change_diagnostics(before, after)
 			diagnostics['fallback'] = {'attempted': fallback_attempted, 'result': 'blocked_by_top_layer'}
@@ -482,8 +558,7 @@ class CamoufoxSession(BrowserSession):
 			object.__setattr__(self, '_last_click_diagnostics', diagnostics)
 			raise RuntimeError(self._blocked_click_error_message(node, hit_target))
 		try:
-			locator = self._locator_for_node(node)
-			await locator.click(button=event.button, timeout=CLICK_TIMEOUT_MS)
+			await self._click_with_short_timeout_and_dom_fallback(locator, button=event.button)
 		except Error as exc:
 			click_failed = True
 			fallback_attempted.append('keyboard_activation')
@@ -799,9 +874,9 @@ class CamoufoxSession(BrowserSession):
 		page = await self._ensure_page()
 		attributes = params.attributes if params.attributes is not None else DEFAULT_FIND_ELEMENT_ATTRIBUTES
 		data = await page.locator(params.selector).evaluate_all(
-			"""(elements, args) => elements.slice(0, args.maxResults).map((element) => {
+			r"""(elements, args) => elements.slice(0, args.maxResults).map((element) => {
 				const sensitiveMarkers = args.sensitiveMarkers || [];
-				const normalizeText = (value) => (value || '').replace(/\\s+/g, ' ').trim();
+				const normalizeText = (value) => (value || '').replace(/\s+/g, ' ').trim();
 				const isSensitive = (name) => {
 					const normalized = String(name || '').toLowerCase();
 					return sensitiveMarkers.some((marker) => normalized.includes(marker));
@@ -812,6 +887,24 @@ class CamoufoxSession(BrowserSession):
 					const value = element.getAttribute(name);
 					if (value !== null) attributes[name] = normalizeText(value).slice(0, args.maxAttributeLength);
 				}
+				const groupContainerSelector = [
+					'article',
+					'li',
+					'[role="article"]',
+					'[role="listitem"]',
+					'[class*="card" i]',
+					'[class*="item" i]',
+					'[class*="result" i]',
+					'[data-testid*="card" i]',
+					'[data-testid*="item" i]',
+					'[data-testid*="result" i]',
+				].join(', ');
+				const priceLikePattern = new RegExp(
+					String.raw`(?:[$€£¥]\s?\d`
+					+ String.raw`|(?:us\$|uyu|usd|eur|gbp|cad|aud|ars|mxn|brl|inr|jpy|cny)\s?\d`
+					+ String.raw`|\d[\d,.]*\s?(?:usd|eur|gbp|cad|aud|uyu|ars|mxn|brl|inr|jpy|cny|stars?|reviews?))`,
+					'i'
+				);
 				const rawText = args.includeText
 					? (element.innerText || element.value || element.getAttribute('aria-label') || '')
 					: '';
@@ -855,12 +948,17 @@ class CamoufoxSession(BrowserSession):
 						attributes: childAttributes,
 					});
 				}
-				const primaryLink = Array.from(element.querySelectorAll('a[href]')).find((child) => visibleText(child));
-				const titleElement = primaryLink || element.querySelector('h1, h2, h3, [role="heading"]');
+				const groupScope = element.matches(groupContainerSelector)
+					? element
+					: element.closest(groupContainerSelector) || element;
+				const primaryLink = element.matches('a[href]') && visibleText(element)
+					? element
+					: Array.from(groupScope.querySelectorAll('a[href]')).find((child) => visibleText(child));
+				const titleElement = primaryLink || groupScope.querySelector('h1, h2, h3, [role="heading"]');
 				const title = titleElement ? visibleText(titleElement) : '';
-				const metadata = Array.from(element.querySelectorAll('*'))
+				const metadata = Array.from(groupScope.querySelectorAll('*'))
 					.map((child) => visibleText(child))
-					.filter((text) => /(?:[$€£¥]\\s?\\d|\\d[\\d,.]*\\s?(?:usd|eur|gbp|stars?|reviews?))/i.test(text))
+					.filter((text) => priceLikePattern.test(text))
 					.slice(0, 4);
 				const actionSelector = [
 					'button',
@@ -868,7 +966,7 @@ class CamoufoxSession(BrowserSession):
 					'input[type="button"]',
 					'input[type="submit"]',
 				].join(', ');
-				const actions = Array.from(element.querySelectorAll(actionSelector))
+				const actions = Array.from(groupScope.querySelectorAll(actionSelector))
 					.map((child) => visibleText(child))
 					.filter(Boolean)
 					.slice(0, 4);
@@ -894,7 +992,7 @@ class CamoufoxSession(BrowserSession):
 						if (!desc) break;
 						if (current.id) desc += `#${current.id}`;
 						else if (typeof current.className === 'string' && current.className.trim()) {
-							desc += `.${current.className.trim().split(/\\s+/).slice(0, 2).join('.')}`;
+							desc += `.${current.className.trim().split(/\s+/).slice(0, 2).join('.')}`;
 						}
 						parts.unshift(desc);
 						current = current.parentElement;
@@ -936,6 +1034,29 @@ class CamoufoxSession(BrowserSession):
 				child_text = f' {child["text"]}' if child.get('text') else ''
 				lines.append(f'  - <{child["tag"]} {child_attrs}>{child_text}'.rstrip())
 		return ActionResult(extracted_content='\n'.join(lines), long_term_memory=lines[0])
+
+	async def click_action(self, params: ClickElementActionIndexOnly) -> ActionResult:
+		node = await self.get_element_by_index(params.index)
+		if node is None:
+			return self._missing_index_result(params.index)
+		element_desc = self._click_element_description(node)
+		before_url = await self.get_current_page_url()
+		before_title = await self.get_current_page_title()
+		event = self.event_bus.dispatch(ClickElementEvent(node=node))
+		await event
+		click_metadata = await event.event_result(raise_if_any=True, raise_if_none=False)
+		after_url = await self.get_current_page_url()
+		after_title = await self.get_current_page_title()
+		memory = f'Clicked {element_desc}'
+		if after_url != before_url:
+			memory += f'. Page changed to {after_title} at {after_url}. Review the current browser state next.'
+		elif after_title != before_title:
+			memory += f'. Page title changed to {after_title}. Review the current browser state next.'
+		return ActionResult(
+			extracted_content=memory,
+			long_term_memory=memory,
+			metadata=click_metadata if isinstance(click_metadata, dict) else None,
+		)
 
 	async def evaluate_script(self, code: str) -> ActionResult:
 		page = await self._ensure_page()
@@ -1300,6 +1421,64 @@ class CamoufoxSession(BrowserSession):
 		self._navigation_history.append(url)
 		self._navigation_history_index = len(self._navigation_history) - 1
 
+	async def _navigation_reached_url(self, page: Page, expected_url: str) -> bool:
+		"""Return whether navigation committed to the expected page despite a timeout-like Playwright error."""
+		current_url = page.url
+		if current_url == expected_url:
+			return True
+		if current_url.rstrip('/') == expected_url.rstrip('/'):
+			return True
+		try:
+			expected = await page.evaluate(
+				"""url => {
+					const expectedUrl = new URL(url, window.location.href);
+					return {
+						origin: expectedUrl.origin,
+						pathname: expectedUrl.pathname,
+						search: expectedUrl.search,
+					};
+				}""",
+				expected_url,
+			)
+			current = await page.evaluate(
+				"""() => ({
+					origin: window.location.origin,
+					pathname: window.location.pathname,
+					search: window.location.search,
+				})"""
+			)
+		except Error:
+			return False
+		return expected == current
+
+	async def _wait_for_navigation_readiness(self, page: Page) -> None:
+		try:
+			await page.wait_for_load_state('domcontentloaded', timeout=NAVIGATION_READINESS_TIMEOUT_MS)
+		except Error:
+			pass
+
+	async def _run_with_remaining_event_time(
+		self,
+		operation: Awaitable[Any],
+		*,
+		reserved_seconds: float,
+	) -> Any:
+		"""Run an operation inside the current event budget while reserving cleanup time for the event bus."""
+		current_task = getattr(self.event_bus, 'current_task', None)
+		event = getattr(current_task, 'event', None)
+		created_at = getattr(event, 'event_created_at', None)
+		event_timeout = getattr(event, 'event_timeout', None)
+		if created_at is None or event_timeout is None:
+			return await operation
+		elapsed = max(0.0, time.time() - created_at.timestamp())
+		remaining = max(0.0, float(event_timeout) - elapsed - reserved_seconds)
+		if remaining <= 0:
+			close = getattr(operation, 'close', None)
+			if callable(close):
+				close()
+			raise RuntimeError('Event time budget exhausted before operation.')
+		return await asyncio.wait_for(operation, timeout=remaining)
+
 	def _element_evidence_for_match(self, node_offsets: list[dict[str, Any]], match_index: int) -> dict[str, Any]:
 		for node in node_offsets:
 			if node['offset'] <= match_index < node['offset'] + node['length']:
@@ -1420,6 +1599,11 @@ class CamoufoxSession(BrowserSession):
 		assert self._context is not None
 		if self._page is None or new_tab:
 			self._page = await self._context.new_page()
+		elif self._page.is_closed():
+			self._page = self._context.pages[-1] if self._context.pages else await self._context.new_page()
+		elif len(self._context.pages) > self._known_page_count:
+			self._page = self._context.pages[-1]
+		self._known_page_count = len(self._context.pages)
 		return self._page
 
 	async def _ensure_context(self, browser: Browser | BrowserContext) -> BrowserContext:
@@ -1730,6 +1914,17 @@ class CamoufoxSession(BrowserSession):
 		evidence = node.attributes.get(SEMANTIC_EVIDENCE_ATTRIBUTE) or node.node_value.strip()
 		return re.sub(r'\s+', ' ', evidence).strip()[:MAX_SEMANTIC_EVIDENCE_LENGTH]
 
+	def _click_element_description(self, node: EnhancedDOMTreeNode) -> str:
+		parts = []
+		for name in ('tagName', 'role', 'id', 'aria-label', 'name', 'type'):
+			value = node.attributes.get(name) or node.attributes.get(name.lower())
+			if value:
+				parts.append(f'{name.lower()}={value}')
+		text = node.node_value.strip()
+		if text:
+			parts.append(text[:80])
+		return ' '.join(parts) or f'element {node.node_id}'
+
 	def _semantic_evidence_without_geometry(self, evidence: str | None) -> str:
 		if not evidence:
 			return ''
@@ -1788,6 +1983,31 @@ class CamoufoxSession(BrowserSession):
 				raise RuntimeError(f'Camoufox frame is no longer available for node {node.node_id}: {frame_id}')
 			return frame.locator(str(selector)).nth(int(ordinal))
 		return page.locator(str(selector)).nth(int(ordinal))
+
+	async def _click_with_short_timeout_and_dom_fallback(self, locator: Any, *, button: str) -> None:
+		try:
+			await locator.click(button=button, timeout=FAST_CLICK_TIMEOUT_MS, no_wait_after=True)
+		except Error as exc:
+			message = str(exc)
+			if 'Timeout' not in message and 'timed out' not in message:
+				raise
+			clicked = await locator.evaluate(
+				"""(element, button) => {
+					if (button !== 'left') return false;
+					const mouseEvent = new MouseEvent('click', {
+						bubbles: true,
+						cancelable: true,
+						view: window,
+						detail: 1,
+					});
+					return element.dispatchEvent(mouseEvent);
+				}""",
+				button,
+				timeout=DOM_CLICK_FALLBACK_TIMEOUT_MS,
+			)
+			if clicked is not False:
+				return
+			raise exc
 
 	def _click_error_message(
 		self,
@@ -1953,7 +2173,7 @@ class CamoufoxSession(BrowserSession):
 		if node.attributes.get(OBSERVABLE_ELEMENT_ATTRIBUTE) == 'true':
 			return False
 		role = (node.attributes.get('role') or '').lower()
-		if role not in {'option', 'menuitem'}:
+		if role not in {'option', 'menuitem'} and node.tag_name.upper() != 'LI':
 			return bool(node.attributes.get('data-value') and node.attributes.get('class') and node.node_value.strip())
 		return bool(
 			await self._locator_for_node(node).evaluate(
@@ -1989,7 +2209,7 @@ class CamoufoxSession(BrowserSession):
 
 	async def _select_autocomplete_option(self, node: EnhancedDOMTreeNode) -> None:
 		role = (node.attributes.get('role') or '').lower()
-		if role not in {'option', 'menuitem'} and node.attributes.get('data-value'):
+		if role not in {'option', 'menuitem'} and node.tag_name.upper() != 'LI' and node.attributes.get('data-value'):
 			page = await self._ensure_page()
 			selected = await page.evaluate(
 				r"""(args) => {
@@ -2033,6 +2253,11 @@ class CamoufoxSession(BrowserSession):
 				if (!target || typeof target.focus !== 'function') throw new Error('No autocomplete input found');
 				element.setAttribute('aria-selected', 'true');
 				target.focus();
+				if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) {
+					target.value = (element.innerText || element.textContent || '').replace(/\\s+/g, ' ').trim();
+					target.dispatchEvent(new Event('input', {bubbles: true}));
+					target.dispatchEvent(new Event('change', {bubbles: true}));
+				}
 			}"""
 		)
 		page = await self._ensure_page()
@@ -2045,20 +2270,29 @@ class CamoufoxSession(BrowserSession):
 			raw_attributes = await self._locator_for_node(node).evaluate(
 				"""(element) => Object.fromEntries(
 					Array.from(element.attributes).map((attribute) => [attribute.name, attribute.value])
-				)"""
+				)""",
+				timeout=CLICK_STATE_ATTRIBUTE_TIMEOUT_MS,
 			)
 			target_attributes = self._safe_attribute_snapshot(raw_attributes)
 		except Error:
 			target_attributes = {}
-		body_metrics = await page.locator('body').evaluate(
-			"""(body) => ({
-				text: (body.innerText || '').replace(/\\s+/g, ' ').trim().slice(0, 400),
-				count: body.querySelectorAll('*').length,
-			})"""
-		)
+		try:
+			body_metrics = await page.locator('body').evaluate(
+				"""(body) => ({
+					text: (body.innerText || '').replace(/\\s+/g, ' ').trim().slice(0, 400),
+					count: body.querySelectorAll('*').length,
+				})""",
+				timeout=CLICK_STATE_BODY_TIMEOUT_MS,
+			)
+		except Error:
+			body_metrics = {}
+		try:
+			title = await page.title()
+		except Error:
+			title = ''
 		return {
 			'url': page.url,
-			'title': await page.title(),
+			'title': title,
 			'dom_count': int(body_metrics.get('count') or 0) if isinstance(body_metrics, dict) else 0,
 			'visible_text': str(body_metrics.get('text') or '') if isinstance(body_metrics, dict) else '',
 			'target_attributes': target_attributes,
@@ -2252,7 +2486,11 @@ class CamoufoxSession(BrowserSession):
 		elements: list[dict[str, Any]] = []
 		for frame_index, frame in enumerate(page.frames):
 			frame_elements = await frame.evaluate(
-				"""(args) => {
+				r"""(args) => {
+				const now = () => (
+					window.performance && window.performance.now ? window.performance.now() : Date.now()
+				);
+				const deadline = now() + args.maxExtractionMs;
 				const selectorList = [
 					'button', 'a[href]', 'input', 'textarea', 'select',
 					'[contenteditable=""]', '[contenteditable="true"]', '[role="button"]',
@@ -2295,6 +2533,36 @@ class CamoufoxSession(BrowserSession):
 					'[role="group"]', '[role="toolbar"]', '[role="application"]',
 					'[aria-label*="keyboard" i]', '[aria-label*="keypad" i]', '[id*="keyboard" i]',
 					'[class*="keyboard" i]', '[class*="keypad" i]',
+				].join(', ');
+				const groupContainerSelector = [
+					'article',
+					'li',
+					'[role="article"]',
+					'[role="listitem"]',
+					'[class*="card" i]',
+					'[class*="item" i]',
+					'[class*="result" i]',
+					'[data-testid*="card" i]',
+					'[data-testid*="item" i]',
+					'[data-testid*="result" i]',
+				].join(', ');
+				const priceLikePattern = new RegExp(
+					String.raw`(?:[$€£¥]\s?\d`
+					+ String.raw`|(?:us\$|uyu|usd|eur|gbp|cad|aud|ars|mxn|brl|inr|jpy|cny)\s?\d`
+					+ String.raw`|\d[\d,.]*\s?(?:usd|eur|gbp|cad|aud|uyu|ars|mxn|brl|inr|jpy|cny|stars?|reviews?))`,
+					'i'
+				);
+				const resultLikeSelector = [
+					'article',
+					'li',
+					'[role="article"]',
+					'[role="listitem"]',
+					'[class*="card" i]',
+					'[class*="item" i]',
+					'[class*="result" i]',
+					'[data-testid*="card" i]',
+					'[data-testid*="item" i]',
+					'[data-testid*="result" i]',
 				].join(', ');
 				const repeatedChromeContainers = [
 					'nav', 'aside', 'header', 'footer', '[role="navigation"]', '[aria-label*="filter" i]',
@@ -2373,6 +2641,8 @@ class CamoufoxSession(BrowserSession):
 						const keyboardSummary = summarizeKeyboardCluster(element);
 						if (keyboardSummary) attributes['data-browser-use-camoufox-keyboard-summary'] = keyboardSummary;
 					}
+					const groupSummary = summarizeGroup(element);
+					if (groupSummary) attributes['data-browser-use-camoufox-group-summary'] = groupSummary;
 					for (const attr of Array.from(element.attributes)) {
 						const value = safeAttributeValue(attr.name, attr.value);
 						if (
@@ -2429,6 +2699,56 @@ class CamoufoxSession(BrowserSession):
 							- (inRepeatedChrome ? 100 : 0)
 							+ (isInteractive ? 10 : 0),
 						rect: {x: rect.x, y: rect.y, width: rect.width, height: rect.height},
+					};
+				};
+				const priceEvidencePayload = (group, documentOrder) => {
+					const visibleText = (node) => {
+						const rect = node.getBoundingClientRect();
+						const style = window.getComputedStyle(node);
+						if (
+							rect.width <= 0
+							|| rect.height <= 0
+							|| style.visibility === 'hidden'
+							|| style.display === 'none'
+						) return '';
+						return normalizeText(
+							node.innerText || node.textContent || node.getAttribute('aria-label') || ''
+						);
+					};
+					const groupText = visibleText(group);
+					if (!groupText || !priceLikePattern.test(groupText)) return null;
+					const titleElement = group.querySelector('a[href], h1, h2, h3, [role="heading"]');
+					const title = titleElement ? visibleText(titleElement) : '';
+					const priceTexts = Array.from(group.querySelectorAll('*'))
+						.map((candidate) => visibleText(candidate))
+						.filter((text) => priceLikePattern.test(text))
+						.slice(0, 3);
+					const summary = [title, ...priceTexts].filter(Boolean).join(' | ').slice(0, 200);
+					if (!summary) return null;
+					const rect = group.getBoundingClientRect();
+					const tagName = group.tagName.toLowerCase();
+					return {
+						tagName: group.nodeName,
+						text: summary,
+						attributes: {
+							'data-browser-use-camoufox-result-summary': summary.slice(0, args.maxAttributeValueLength),
+							'data-browser-use-camoufox-geometry': [
+								`${Math.round(rect.x)},${Math.round(rect.y)}`,
+								`${Math.round(rect.width)}x${Math.round(rect.height)}`,
+							].join(','),
+						},
+						selector: tagName,
+						ordinal: documentOrder,
+						is_visible: true,
+						is_disabled: false,
+						is_interactive: false,
+						is_observable: true,
+						frame_id: args.frameId,
+						frame_url: args.frameUrl,
+						shadow_root_type: null,
+						priority: 2_000,
+						rect: {x: rect.x, y: rect.y, width: rect.width, height: rect.height},
+						documentOrder,
 					};
 				};
 				const summarizeGrid = (grid) => {
@@ -2526,11 +2846,54 @@ class CamoufoxSession(BrowserSession):
 					if (!entries.length) return '';
 					return entries.join('; ').slice(0, args.maxSemanticEvidenceLength);
 				};
+				const summarizeGroup = (element) => {
+					const group = element.matches(groupContainerSelector)
+						? element
+						: element.closest(groupContainerSelector);
+					if (!group) return '';
+					const visibleText = (node) => {
+						const rect = node.getBoundingClientRect();
+						const style = window.getComputedStyle(node);
+						if (
+							rect.width <= 0
+							|| rect.height <= 0
+							|| style.visibility === 'hidden'
+							|| style.display === 'none'
+						) return '';
+						const label = node.getAttribute('aria-label') || '';
+						return normalizeText(node.innerText || node.textContent || label);
+					};
+					const link = Array.from(group.querySelectorAll('a[href]'))
+						.find((candidate) => visibleText(candidate));
+					const heading = group.querySelector('h1, h2, h3, [role="heading"]');
+					const title = normalizeText((link && visibleText(link)) || (heading && visibleText(heading)) || '');
+					const metadata = Array.from(group.querySelectorAll('*'))
+						.map((candidate) => visibleText(candidate))
+						.filter((text) => priceLikePattern.test(text))
+						.slice(0, 3);
+					const parts = [];
+					if (title) parts.push(`group_title=${title.slice(0, args.maxAttributeValueLength)}`);
+					if (metadata.length) {
+						parts.push(`group_metadata=${metadata.join(' | ').slice(0, args.maxAttributeValueLength)}`);
+					}
+					return parts.join('; ').slice(0, args.maxSemanticEvidenceLength);
+				};
 				const domRoot = document.body || document;
-				const elements = Array.from(domRoot.querySelectorAll('*'))
-					.map((element, documentOrder) => ({...elementPayload(element), documentOrder}))
-					.filter((element) => element.is_visible && element.is_observable);
+				const elements = [];
+				const resultGroups = [];
+				let documentOrder = 0;
+				for (const element of Array.from(domRoot.querySelectorAll('*'))) {
+					if (now() > deadline) break;
+					if (element.matches(resultLikeSelector)) {
+						const resultEvidence = priceEvidencePayload(element, documentOrder);
+						if (resultEvidence) resultGroups.push(resultEvidence);
+					}
+					const payload = {...elementPayload(element), documentOrder};
+					if (payload.is_visible && payload.is_observable) elements.push(payload);
+					documentOrder += 1;
+				}
 				for (const host of Array.from(document.querySelectorAll(shadowHostSelector))) {
+					if (now() > deadline) break;
 					if (host.shadowRoot) {
 						const shadowElements = Array.from(host.shadowRoot.querySelectorAll('*'))
 							.map((element, documentOrder) => ({...elementPayload(element, 'open'), documentOrder}))
@@ -2541,7 +2904,7 @@ class CamoufoxSession(BrowserSession):
 						if (payload.is_visible) elements.push(payload);
 					}
 				}
-				return elements
+				return resultGroups.concat(elements)
 					.map((element, index) => ({...element, originalOrder: element.documentOrder ?? index}))
 					.sort((left, right) => (
 						(right.priority - left.priority) || (left.originalOrder - right.originalOrder)
@@ -2553,6 +2916,7 @@ class CamoufoxSession(BrowserSession):
 					'frameId': 'main' if frame == page.main_frame else f'frame-{frame_index}',
 					'frameUrl': '' if frame == page.main_frame else frame.url,
 					'maxAttributeValueLength': MAX_SAFE_ATTRIBUTE_VALUE_LENGTH,
+					'maxExtractionMs': 5_000,
 					'maxSemanticEvidenceLength': MAX_SEMANTIC_EVIDENCE_LENGTH,
 					'sensitiveAttributeMarkers': list(SENSITIVE_ATTRIBUTE_MARKERS),
 				},
@@ -2598,6 +2962,9 @@ class CamoufoxSession(BrowserSession):
 			value = attributes.get(name)
 			if value:
 				parts.append(f'{name}={value}')
+		group = attributes.get('data-browser-use-camoufox-group-summary')
+		if group:
+			parts.append(group)
 		geometry = attributes.get('data-browser-use-camoufox-geometry')
 		if geometry:
 			parts.append(f'geometry={geometry}')

@@ -2,6 +2,7 @@ from pathlib import Path
 
 import pytest
 from browser_use.browser.events import BrowserStateRequestEvent, ClickElementEvent, SendKeysEvent, TypeTextEvent
+from browser_use.browser.views import BrowserStateSummary
 
 from browser_use_camoufox import CamoufoxSession
 from browser_use_camoufox.session import OBSERVABLE_ELEMENT_ATTRIBUTE, SEMANTIC_EVIDENCE_ATTRIBUTE
@@ -51,6 +52,41 @@ async def test_selector_map_uses_stable_ordinals_and_metadata(tmp_path: Path):
 
 		with pytest.raises(RuntimeError, match='disabled and cannot be clicked'):
 			await session.on_ClickElementEvent(ClickElementEvent(node=disabled))
+	finally:
+		await session.stop()
+
+
+@pytest.mark.anyio
+async def test_large_result_pages_keep_state_extraction_bounded(tmp_path: Path):
+	fixture = tmp_path / 'large-results.html'
+	listings = []
+	for index in range(500):
+		details = ''.join(f'<span>detail {index}-{detail}</span>' for detail in range(40))
+		listings.append(
+			f"""
+			<li class="s-item">
+				<a href="/item/{index}">Wireless Mouse Model {index}</a>
+				<span>$ {index + 10}.99</span>
+				{details}
+				<button>Buy It Now</button>
+			</li>
+			"""
+		)
+	fixture.write_text(f'<html><body><main><ul>{"".join(listings)}</ul></main></body></html>')
+	session = CamoufoxSession(headless=True)
+
+	try:
+		await session.start()
+		await session.navigate_to(fixture.as_uri())
+		state_event = session.event_bus.dispatch(BrowserStateRequestEvent(include_dom=True, include_screenshot=False))
+		await state_event
+		state = await state_event.event_result()
+
+		assert isinstance(state, BrowserStateSummary)
+		assert 0 < len(state.dom_state.selector_map) <= 300
+		llm_text = state.dom_state.llm_representation()
+		assert 'Wireless Mouse Model' in llm_text
+		assert '$' in llm_text
 	finally:
 		await session.stop()
 
@@ -403,6 +439,7 @@ async def test_dense_page_keeps_main_semantic_content_when_observation_is_bounde
 				<main>
 					<article data-testid="primary-card" data-state="ready">
 						<h2>Primary result card</h2>
+						<span>UYU 1,234.00</span>
 						<p>Central semantic answer survives bounded output</p>
 					</article>
 					<ul aria-label="Central list">
@@ -441,6 +478,9 @@ async def test_dense_page_keeps_main_semantic_content_when_observation_is_bounde
 		assert primary_card.attributes[OBSERVABLE_ELEMENT_ATTRIBUTE] == 'true'
 		assert primary_card.snapshot_node is not None
 		assert primary_card.snapshot_node.is_clickable is False
+		semantic_evidence = primary_card.attributes['data-browser-use-camoufox-semantic-evidence']
+		assert 'group_title=Primary result card' in semantic_evidence
+		assert 'group_metadata=UYU 1,234.00' in semantic_evidence
 		with pytest.raises(RuntimeError, match='observable but not clickable'):
 			await session.on_ClickElementEvent(ClickElementEvent(node=primary_card))
 	finally:

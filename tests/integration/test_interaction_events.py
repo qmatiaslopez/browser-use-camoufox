@@ -8,8 +8,17 @@ from browser_use.browser.events import (
 	ScrollEvent,
 	ScrollToTextEvent,
 )
+from browser_use.tools.views import ClickElementActionIndexOnly
+from playwright.async_api import Error as PlaywrightError
 
 from browser_use_camoufox import CamoufoxSession
+
+
+async def get_node_by_id(session: CamoufoxSession, element_id: str):
+	state_event = session.event_bus.dispatch(BrowserStateRequestEvent(include_dom=True, include_screenshot=False))
+	await state_event
+	state = await state_event.event_result()
+	return next(node for node in state.dom_state.selector_map.values() if node.attributes.get('id') == element_id)
 
 
 @pytest.mark.anyio
@@ -473,6 +482,118 @@ async def test_click_recovers_non_aria_autocomplete_suggestion_after_no_change(t
 
 
 @pytest.mark.anyio
+async def test_click_scrolls_offscreen_target_before_hit_target_validation(tmp_path: Path):
+	fixture = tmp_path / 'offscreen-click.html'
+	fixture.write_text(
+		"""
+		<html>
+			<body style="height: 3400px">
+				<div style="height: 2600px"></div>
+				<button id="buy-now" onclick="document.body.dataset.clicked='true'">Buy now</button>
+			</body>
+		</html>
+		"""
+	)
+	session = CamoufoxSession(headless=True)
+
+	try:
+		await session.start()
+		await session.navigate_to(fixture.as_uri())
+		state_event = session.event_bus.dispatch(BrowserStateRequestEvent(include_dom=True, include_screenshot=False))
+		await state_event
+		state = await state_event.event_result()
+		button = next(node for node in state.dom_state.selector_map.values() if node.attributes.get('id') == 'buy-now')
+
+		await session.on_ClickElementEvent(ClickElementEvent(node=button))
+
+		page = await session.get_current_page()
+		assert await page.locator('body').get_attribute('data-clicked') == 'true'
+		assert await page.evaluate('() => window.scrollY') > 0
+		diagnostics = session.last_click_diagnostics
+		assert diagnostics is not None
+		assert diagnostics['action_plan']['preconditions']['hit_target_validated'] is True
+	finally:
+		await session.stop()
+
+
+@pytest.mark.anyio
+async def test_click_uses_no_wait_after_for_navigation_target(monkeypatch, tmp_path: Path):
+	fixture = tmp_path / 'navigation-click.html'
+	fixture.write_text(
+		"""
+		<html>
+			<body>
+				<button id="search">Search</button>
+			</body>
+		</html>
+		"""
+	)
+	session = CamoufoxSession(headless=True)
+
+	try:
+		await session.start()
+		await session.navigate_to(fixture.as_uri())
+		button = await get_node_by_id(session, 'search')
+		original_locator_for_node = session._locator_for_node
+		click_kwargs = {}
+
+		class LocatorProxy:
+			def __init__(self, locator):
+				self._locator = locator
+
+			async def click(self, **kwargs):
+				click_kwargs.update(kwargs)
+				raise PlaywrightError('synthetic click failure')
+
+			def __getattr__(self, name):
+				return getattr(self._locator, name)
+
+		def locator_for_node(node):
+			return LocatorProxy(original_locator_for_node(node))
+
+		monkeypatch.setattr(session, '_locator_for_node', locator_for_node)
+
+		with pytest.raises(RuntimeError, match='no_change_detected'):
+			await session.on_ClickElementEvent(ClickElementEvent(node=button))
+
+		assert click_kwargs['no_wait_after'] is True
+	finally:
+		await session.stop()
+
+
+@pytest.mark.anyio
+async def test_click_action_reports_page_change_in_long_term_memory(tmp_path: Path):
+	fixture = tmp_path / 'click-memory.html'
+	target = tmp_path / 'results.html'
+	fixture.write_text(
+		"""
+		<html>
+			<head><title>Search form</title></head>
+			<body>
+				<button id="search" onclick="location.href = 'results.html'">Search</button>
+			</body>
+		</html>
+		"""
+	)
+	target.write_text('<html><head><title>Results Page</title></head><body>Result content</body></html>')
+	session = CamoufoxSession(headless=True)
+
+	try:
+		await session.start()
+		await session.navigate_to(fixture.as_uri())
+		button = await get_node_by_id(session, 'search')
+
+		result = await session.click_action(ClickElementActionIndexOnly(index=button.node_id))
+
+		assert result.error is None
+		assert result.long_term_memory is not None
+		assert 'Page changed to Results Page' in result.long_term_memory
+		assert target.as_uri() in result.long_term_memory
+	finally:
+		await session.stop()
+
+
+@pytest.mark.anyio
 async def test_top_layer_intercepted_click_fixture_preserves_blocked_target(tmp_path: Path):
 	fixture = tmp_path / 'top_layer_intercept.html'
 	fixture.write_text(
@@ -515,6 +636,47 @@ async def test_top_layer_intercepted_click_fixture_preserves_blocked_target(tmp_
 		assert await page.locator('body').get_attribute('data-clicked') is None
 		assert session.last_click_diagnostics is not None
 		assert session.last_click_diagnostics['action_plan']['no_change_reason'] == 'click_blocked_by_top_layer'
+	finally:
+		await session.stop()
+
+
+@pytest.mark.anyio
+async def test_top_layer_blocked_autocomplete_option_uses_safe_selection_recovery(tmp_path: Path):
+	fixture = tmp_path / 'blocked-autocomplete.html'
+	fixture.write_text(
+		"""
+		<html>
+			<body>
+				<input id="destination" aria-controls="suggestions" value="Montevideo" />
+				<ul id="suggestions" role="listbox">
+					<li id="choice" role="option">Montevideo, Uruguay</li>
+				</ul>
+				<div
+					id="promo"
+					style="position:fixed; left:0; top:0; width:100vw; height:100vh; z-index:10"
+				>Sign in, save money</div>
+			</body>
+		</html>
+		"""
+	)
+	session = CamoufoxSession(headless=True)
+
+	try:
+		await session.start()
+		await session.navigate_to(fixture.as_uri())
+		state_event = session.event_bus.dispatch(BrowserStateRequestEvent(include_dom=True, include_screenshot=False))
+		await state_event
+		state = await state_event.event_result()
+		option = next(node for node in state.dom_state.selector_map.values() if node.attributes.get('id') == 'choice')
+
+		await session.on_ClickElementEvent(ClickElementEvent(node=option))
+
+		page = await session.get_current_page()
+		assert await page.locator('#destination').input_value() == 'Montevideo, Uruguay'
+		diagnostics = session.last_click_diagnostics
+		assert diagnostics is not None
+		assert diagnostics['fallback']['attempted'] == ['click', 'autocomplete_option']
+		assert diagnostics['fallback']['result'] == 'autocomplete_option_succeeded'
 	finally:
 		await session.stop()
 

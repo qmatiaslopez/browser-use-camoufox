@@ -348,6 +348,13 @@ async def test_find_elements_dense_cards_surface_grouped_visible_evidence(tmp_pa
 						<button type="button">Compare Beta</button>
 						<p>Trail option with visible metadata.</p>
 					</article>
+					<ul>
+						<li class="s-item">
+							<a class="s-item__link" href="/gamma">Gamma Wireless Mouse</a>
+							<span>UYU 1,234.00</span>
+							<span>Buy It Now</span>
+						</li>
+					</ul>
 				</main>
 			</body>
 		</html>
@@ -363,7 +370,7 @@ async def test_find_elements_dense_cards_surface_grouped_visible_evidence(tmp_pa
 
 		result = await tools.registry.execute_action(
 			'find_elements',
-			{'selector': 'article.result-card', 'attributes': ['data-testid']},
+			{'selector': 'article.result-card, li.s-item', 'attributes': ['data-testid']},
 			browser_session=session,
 		)
 
@@ -377,6 +384,8 @@ async def test_find_elements_dense_cards_surface_grouped_visible_evidence(tmp_pa
 		assert 'primary_link="/alpha"' in result.extracted_content
 		assert 'metadata="$42.50"' in result.extracted_content
 		assert 'actions="Compare Alpha"' in result.extracted_content
+		assert 'Gamma Wireless Mouse' in result.extracted_content
+		assert 'UYU 1,234.00' in result.extracted_content
 		assert len(result.extracted_content) < 2000
 	finally:
 		await session.stop()

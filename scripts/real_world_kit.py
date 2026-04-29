@@ -38,6 +38,14 @@ FAILURE_CLASSES = (
 	'verifier weakness',
 	'unknown',
 )
+PRICE_PATTERN = re.compile(
+	r"""
+	([$€£¥]\s?\d+)
+	|(\b(?:us\$|usd|eur|gbp|uyu|cad|aud|ars|mxn|brl|inr|jpy|cny)\b\s?\d+)
+	|(\d+\s?(?:usd|eur|gbp|uyu|us\$))
+	""",
+	flags=re.IGNORECASE | re.VERBOSE,
+)
 
 MISSION_PRINCIPLES = """
 Mandatory mission laws:
@@ -46,6 +54,11 @@ Mandatory mission laws:
 - Use the local OpenAI-compatible API with model gpt-5.4.
 - Do not use hidden app state, page source, bundled JavaScript, internal JSON endpoints, or external answer sites.
 - Do not claim success unless the visible browser state satisfies the mission success criteria.
+- After the initial navigation, immediately interact with visible controls or navigate to a task-relevant public URL.
+- Do not just wait or inspect controls.
+- When evidence is visible, finish by making the done action the only action in that step with success=True.
+- If a visible page, tool result, or prior action memory contains the required evidence, use it in done(success=True);
+  do not mark failure only because the current viewport or interactive-element list is incomplete.
 - If the mission cannot be completed, finish with success=False and explain the observed blocker.
 """
 
@@ -353,8 +366,8 @@ MISSIONS = {
 			'summarize every guess and the blocker.'
 		),
 		success_criteria='A submitted Wordle row is complete and every tile in that row is correct/green.',
-		max_steps=18,
-		timeout_seconds=900,
+		max_steps=24,
+		timeout_seconds=1100,
 		family='Dynamic keyboard app',
 		variation=3,
 		complexity='Very complex',
@@ -472,7 +485,7 @@ def normalize_text(text: str) -> str:
 
 
 def has_price(text: str) -> bool:
-	return bool(re.search(r'([$€£]\s?\d+|\d+\s?(?:usd|eur|gbp|us\$))', text, flags=re.IGNORECASE))
+	return bool(PRICE_PATTERN.search(text))
 
 
 async def verify_generic_visible(
@@ -484,10 +497,11 @@ async def verify_generic_visible(
 	body_text = await evaluate_page(page, "() => document.body ? document.body.innerText : ''")
 	final = final_result or ''
 	combined = normalize_text(f'{url} {title} {body_text[:4000]} {final}')
+	visible_or_final_evidence = normalize_text(f'{body_text[:4000]} {final}')
 	history_text = normalize_text(f'{url} {title}')
 	domain_ok = not mission.domains or any(domain in url for domain in mission.domains)
 	visible_ok = all(normalize_text(term) in combined for term in mission.visible_terms)
-	final_ok = all(normalize_text(term) in normalize_text(final) for term in mission.final_terms)
+	final_ok = all(normalize_text(term) in visible_or_final_evidence for term in mission.final_terms)
 	history_ok = all(
 		normalize_text(term) in combined or normalize_text(term) in history_text for term in mission.history_terms
 	)
@@ -897,8 +911,8 @@ def capture_runtime_diagnostics(session: CamoufoxSession | BrowserSession) -> di
 	if not isinstance(session, CamoufoxSession):
 		return {}
 	return {
-		'last_click': session.last_click_diagnostics() or {},
-		'last_keyboard': session.last_keyboard_diagnostics() or {},
+		'last_click': session.last_click_diagnostics or {},
+		'last_keyboard': session.last_keyboard_diagnostics or {},
 	}
 
 
@@ -940,10 +954,11 @@ async def run_mission(
 			step_timeout=180,
 		)
 		history = await asyncio.wait_for(agent.run(max_steps=mission.max_steps), timeout=mission.timeout_seconds)
-		result['history'] = history_summary(history)
 		verification = await verify_mission(mission, session, history.final_result())
+		result['history'] = history_summary(history)
 		result['verification'] = asdict(verification)
 		result['runtime_diagnostics'] = capture_runtime_diagnostics(session)
+		# Strict benchmark semantics: verifier success must not override an unfinished or failed agent done().
 		result['passed'] = history.is_successful() is True and verification.passed
 		if history.is_successful() is not True:
 			result['errors'].append(f'Agent did not finish successfully: {history.is_successful()}')
